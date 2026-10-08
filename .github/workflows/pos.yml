@@ -43,7 +43,7 @@ env:
   QT_VERSION: "6.8.3"
   # Released from the release repository before this one: never built on the hour, only
   # when asked.
-  BEFORE: "v0.1.0 v0.1.0-beta.1 v0.1.0-beta.2 v0.1.0-beta.3 v0.1.1 v0.1.1-beta.1 v0.2.0 v0.2.0-beta.1 v0.2.1 v0.2.1-beta.1 v0.3.0 v0.3.0-beta.1 v0.4.0 v0.4.0-beta.1 v0.4.0-beta.2 v0.4.1 v0.4.1-beta.1 v0.5.0 v0.5.0-beta.1 v0.6.0 v0.6.0-beta.1 v0.7.0 v0.7.0-beta.1 v0.8.0 v0.8.0-beta.1"
+  BEFORE: "v0.1.0 v0.1.0-beta.1 v0.1.0-beta.2 v0.1.0-beta.3 v0.1.1 v0.1.1-beta.1 v0.2.0 v0.2.0-beta.1 v0.2.1 v0.2.1-beta.1 v0.3.0 v0.3.0-beta.1 v0.4.0 v0.4.0-beta.1 v0.4.0-beta.2 v0.4.1 v0.4.1-beta.1 v0.5.0 v0.5.0-beta.1 v0.6.0 v0.6.0-beta.1 v0.7.0 v0.7.0-beta.1 v0.8.0 v0.8.0-beta.1 v0.9.0 v0.9.0-beta.1"
 
 jobs:
   find:
@@ -103,10 +103,13 @@ jobs:
             fi
             pick="$ASKED"
           else
-            # The newest tag with no release here, but for those from before this repository.
+            # The newest release tag with no release here, but for those from before this repository
+            # and v0.9.0, built as AXENT POS. A beta is built only when asked for by hand: staging's
+            # beta is a formality, and installers are for the release.
             for tag in $(tac <<<"$tags"); do
               grep -qx -- "$tag" <<<"$made" && continue
               [[ " $BEFORE " == *" $tag "* ]] && continue
+              [[ "$tag" == *-* ]] && continue
               pick="$tag"
               break
             done
