@@ -25,7 +25,7 @@ on:
         description: "Or a branch of pos, only to try its builds: nothing is uploaded nor published"
         required: false
       only:
-        description: "With a try, the one build to run: deb, exe, apk or dmg; empty for every one"
+        description: "The one build to run: deb, exe, apk or dmg; empty for every one. With a tag whose release is still a draft, that file is built again into it"
         required: false
 
 permissions:
@@ -92,8 +92,14 @@ jobs:
               exit 1
             fi
             if grep -qx -- "$ASKED" <<<"$made"; then
-              echo "::error::$ASKED has a release here already; delete it first to build it again"
-              exit 1
+              # One file built again into its draft, as a Windows build that failed its check;
+              # a published release, or all its files at once, is never built again.
+              draft=$(gh release view "$APP-$ASKED" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
+              if [ "${ONLY:-all}" = "all" ] || [ "$draft" != "true" ]; then
+                echo "::error::$ASKED has a release here already; delete it first to build it again, or name the one file to build again into its draft"
+                exit 1
+              fi
+              echo "Building pos's $ASKED again, its $ONLY alone, into its draft."
             fi
             pick="$ASKED"
           else
@@ -149,6 +155,11 @@ jobs:
             echo
             echo "Questions: AXENT POS's About page, under Help, has how to reach us."
           } > notes.md
+          # Its draft already here, one file built again into it: kept as it is.
+          if gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$RELEASE is here already, as a draft: the file goes into it."
+            exit 0
+          fi
           flags=(--draft --title "AXENT POS $VERSION" --notes-file notes.md)
           [ "$BETA" = "true" ] && flags+=(--prerelease)
           gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main "${flags[@]}"
