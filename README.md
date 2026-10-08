@@ -6,7 +6,7 @@ The downloads of the apps Wira Systems makes. This repository holds only the fin
 
 | App | What it is |
 | --- | --- |
-| **AXENT POS**, soon **Wira POS** | A point of sale for shops, supermarkets, bars and restaurants: a quick till, every way to pay including M-Pesa, stock by expiry date, bills, VAT, reports and printing, with the whole shop working together over its own network. For Windows, macOS and Linux. |
+| **Wira POS** | A point of sale for shops, supermarkets, bars and restaurants: a quick till, every way to pay including M-Pesa, stock by expiry date, bills, VAT, reports and printing, with the whole shop working together over its own network. For Windows, macOS and Linux. |
 
 Each release will be listed under [Releases](https://github.com/wira-systems/releases/releases), with a file for each kind of computer and how to install it. More apps will join it here.
 

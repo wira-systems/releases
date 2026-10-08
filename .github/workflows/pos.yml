@@ -1,4 +1,4 @@
-# AXENT POS's releases (wira-systems/pos, A-010, A-247): every hour, and whenever run by hand for a
+# Wira POS's releases (wira-systems/pos, A-010, A-247): every hour, and whenever run by hand for a
 # tag, a release tag of the private pos that has no release here yet is built into the files a
 # shop installs, and published here, its release named for the app, pos-v1.2.0 for pos's v1.2.0, so
 # other apps' releases can stand beside it. This repository holds no source, and its logs are public: no step
@@ -11,7 +11,7 @@
 # Publishing is switched on by the repository variable PUBLISH, set to true once the builds are
 # in place (P12-M06); until then every release stays a draft, which only the organization sees.
 
-name: AXENT POS
+name: Wira POS
 
 on:
   schedule:
@@ -41,7 +41,7 @@ env:
   # A release here is named for its app: pos-v1.2.0 for pos's v1.2.0.
   APP: pos
   QT_VERSION: "6.8.3"
-  # Released from axent-labs/releases before this repository: never built on the hour, only
+  # Released from the release repository before this one: never built on the hour, only
   # when asked.
   BEFORE: "v0.1.0 v0.1.0-beta.1 v0.1.0-beta.2 v0.1.0-beta.3 v0.1.1 v0.1.1-beta.1 v0.2.0 v0.2.0-beta.1 v0.2.1 v0.2.1-beta.1 v0.3.0 v0.3.0-beta.1 v0.4.0 v0.4.0-beta.1 v0.4.0-beta.2 v0.4.1 v0.4.1-beta.1 v0.5.0 v0.5.0-beta.1 v0.6.0 v0.6.0-beta.1 v0.7.0 v0.7.0-beta.1 v0.8.0 v0.8.0-beta.1"
 
@@ -141,26 +141,26 @@ jobs:
           builds() { [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]; }
           {
             if [ "$BETA" = "true" ]; then
-              echo "A beta of AXENT POS $VERSION, for trying out before its release."
+              echo "A beta of Wira POS $VERSION, for trying out before its release."
             else
-              echo "AXENT POS $VERSION."
+              echo "Wira POS $VERSION."
             fi
             echo
             echo "| File | For | To install |"
             echo "| --- | --- | --- |"
-            ! builds deb || echo "| \`axent-pos_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./axent-pos_${VERSION}_amd64.deb\` |"
-            ! builds exe || echo "| \`AXENT-POS-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
-            [ "$ONLY" != "apk" ] || echo "| \`axent-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
-            ! builds dmg || echo "| \`AXENT-POS-${VERSION}.dmg\` | macOS | Open it and drag AXENT POS to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
+            ! builds deb || echo "| \`wira-pos_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./wira-pos_${VERSION}_amd64.deb\` |"
+            ! builds exe || echo "| \`Wira-POS-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+            [ "$ONLY" != "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
+            ! builds dmg || echo "| \`Wira-POS-${VERSION}.dmg\` | macOS | Open it and drag Wira POS to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
-            echo "Questions: AXENT POS's About page, under Help, has how to reach us."
+            echo "Questions: Wira POS's About page, under Help, has how to reach us."
           } > notes.md
           # Its draft already here, one file built again into it: kept as it is.
           if gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "$RELEASE is here already, as a draft: the file goes into it."
             exit 0
           fi
-          flags=(--draft --title "AXENT POS $VERSION" --notes-file notes.md)
+          flags=(--draft --title "Wira POS $VERSION" --notes-file notes.md)
           [ "$BETA" = "true" ] && flags+=(--prerelease)
           gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main "${flags[@]}"
 
@@ -224,9 +224,9 @@ jobs:
           cd pos
           cmake --preset linux-release > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
           cmake --build --preset linux-release --target ledgry > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
-          test -x build/linux-release/axent
+          test -x build/linux-release/wira
           if [ -e build/linux-release/ledgry-keys ]; then echo "::error::the key tool was built"; exit 1; fi
-          echo "Built axent $VERSION."
+          echo "Built wira $VERSION."
 
       - name: The .deb
         env:
@@ -247,7 +247,7 @@ jobs:
           dpkg-deb -I dist/*.deb | sed -n '/Package:/,/Depends:/p'
 
       - name: Installed and opened, on the oldest Ubuntu it is for and the newest
-        # As a shop would: installed with apt on a bare Ubuntu, AXENT POS opened on the demo shop
+        # As a shop would: installed with apt on a bare Ubuntu, Wira POS opened on the demo shop
         # and left running a while, its data made where it keeps it. Its Wayland graphics plugin is
         # carried, and the system's own libraries, the keychain's among them, still load beside
         # what it carries: a newer Ubuntu is where carrying an older one of those breaks.
@@ -259,19 +259,19 @@ jobs:
           apt-get update -qq > /dev/null
           apt-get install -y -qq /dist/*.deb xvfb xauth libsecret-1-0 python3 > /dev/null
           . /etc/os-release
-          test -e /opt/axent-pos/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
+          test -e /opt/wira-pos/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
             || { echo "::error::no Wayland graphics plugin on $PRETTY_NAME"; exit 1; }
-          env LD_LIBRARY_PATH=/opt/axent-pos/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
+          env LD_LIBRARY_PATH=/opt/wira-pos/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
             || { echo "::error::the keychain's library does not load beside the .deb's on $PRETTY_NAME"; exit 1; }
-          xvfb-run -a axent --demo > /tmp/axent.log 2>&1 &
+          xvfb-run -a wira --demo > /tmp/wira.log 2>&1 &
           sleep 15
-          if ! pgrep -x axent > /dev/null; then
-            echo "::error::AXENT POS stopped by itself on $PRETTY_NAME"
-            grep -vE "^$" /tmp/axent.log | tail -20
+          if ! pgrep -x wira > /dev/null; then
+            echo "::error::Wira POS stopped by itself on $PRETTY_NAME"
+            grep -vE "^$" /tmp/wira.log | tail -20
             exit 1
           fi
           shop=$(find / -xdev -name ledgry-demo.sqlite 2> /dev/null | head -1)
-          [ -n "$shop" ] || { echo "::error::AXENT POS made no demo shop on $PRETTY_NAME"; exit 1; }
+          [ -n "$shop" ] || { echo "::error::Wira POS made no demo shop on $PRETTY_NAME"; exit 1; }
           echo "Installed and opened on the demo shop on $PRETTY_NAME for 15 seconds."
           SHOP
           sed -i 's/^          //' "$RUNNER_TEMP/shop.sh"
@@ -291,7 +291,7 @@ jobs:
         if: needs.find.outputs.try != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" dist/axent-pos_${VERSION}_amd64.deb -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" dist/wira-pos_${VERSION}_amd64.deb -R "$GITHUB_REPOSITORY" --clobber
 
   exe:
     name: The .exe, for Windows
@@ -351,40 +351,40 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
           Set-Location ..
           # Nothing ships without Qt beside it, and nothing of the Activator's ships at all.
-          foreach ($needed in "bin\axent.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
+          foreach ($needed in "bin\wira.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
             if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
           }
           $activator = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match "ledgry-keys|activator" }
           if ($activator) { $activator | ForEach-Object { $_.FullName }; Write-Error "the install carries something of the Activator's"; exit 1 }
-          Write-Output "Built and installed axent $env:VERSION."
+          Write-Output "Built and installed wira $env:VERSION."
 
       - name: The .exe
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" pos\packaging\axent.iss
+          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" pos\packaging\wira.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem dist | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
       - name: Installed, opened and taken out again
-        # As a shop would: installed for everyone, AXENT POS opened on the demo shop, left running
+        # As a shop would: installed for everyone, Wira POS opened on the demo shop, left running
         # a while, its data made where it keeps it, then uninstalled.
         shell: pwsh
         run: |
-          $setup = "dist\AXENT-POS-$env:VERSION-setup.exe"
-          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=C:\AXENT-POS" -Wait
-          if (-not (Test-Path "C:\AXENT-POS\bin\axent.exe")) { Write-Error "the installer put no axent.exe in place"; exit 1 }
-          $app = Start-Process "C:\AXENT-POS\bin\axent.exe" -ArgumentList "--demo" -PassThru
+          $setup = "dist\Wira-POS-$env:VERSION-setup.exe"
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=C:\Wira-POS" -Wait
+          if (-not (Test-Path "C:\Wira-POS\bin\wira.exe")) { Write-Error "the installer put no wira.exe in place"; exit 1 }
+          $app = Start-Process "C:\Wira-POS\bin\wira.exe" -ArgumentList "--demo" -PassThru
           Start-Sleep -Seconds 15
-          if ($app.HasExited) { Write-Error "AXENT POS stopped by itself, with $($app.ExitCode)"; exit 1 }
-          # Found wherever AXENT keeps it under its data folder, as on Linux and macOS: since pos's
+          if ($app.HasExited) { Write-Error "Wira POS stopped by itself, with $($app.ExitCode)"; exit 1 }
+          # Found wherever Wira POS keeps it under its data folder, as on Linux and macOS: since pos's
           # bug bounty the demo shop is in a folder of its own, demo\ledgry-demo.sqlite.
-          $shop = Get-ChildItem (Join-Path $env:APPDATA "AXENT") -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $shop) { Write-Error "AXENT POS made no demo shop under $env:APPDATA\AXENT"; exit 1 }
+          $shop = Get-ChildItem (Join-Path $env:APPDATA "Wira") -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $shop) { Write-Error "Wira POS made no demo shop under $env:APPDATA\Wira"; exit 1 }
           Write-Output "Its demo shop at $($shop.FullName)."
           Stop-Process -Id $app.Id -Force
-          Start-Process "C:\AXENT-POS\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          Start-Process "C:\Wira-POS\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
           Write-Output "Installed, opened on the demo shop for 15 seconds, and uninstalled."
 
       - name: Attached to the draft
@@ -392,9 +392,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/AXENT-POS-${VERSION}-setup.exe" -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" "dist/Wira-POS-${VERSION}-setup.exe" -R "$GITHUB_REPOSITORY" --clobber
 
-  # AXENT POS is for desktops for now (A-020): the .apk is built only when asked for by name, and
+  # Wira POS is for desktops for now (A-020): the .apk is built only when asked for by name, and
   # those already published stay.
   apk:
     name: The .apk, for Android
@@ -412,7 +412,7 @@ jobs:
       NDK: "26.1.10909125"
       PLATFORM: "android-34"
       BUILD_TOOLS: "34.0.0"
-      # AXENT's own signing key, whose certificate every .apk must carry (axent-labs/android-signing; not yet a secret here);
+      # Wira Systems' own signing key, whose certificate every .apk must carry (the private android-signing repository; not yet a secret here);
       # its store and password are the secrets ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD.
       CERTIFICATE: "0829c97f0de56ad51b732a074a5951526457c37efe1155028db4bb61dc78b54d"
     steps:
@@ -458,13 +458,13 @@ jobs:
         # Into a log that stays on the runner: only what went wrong is shown, never the source.
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          # Not secret, and as a secret it would hide the word axent in every log line.
+          # Not secret, and as a secret it would hide the alias in every log line; the alias is the key's own, kept from before (A-251).
           QT_ANDROID_KEYSTORE_ALIAS: axent
           QT_ANDROID_KEYSTORE_STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           QT_ANDROID_KEYSTORE_KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
-          export QT_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/axent.p12"
+          export QT_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/wira.p12"
           base64 -d <<<"$KEYSTORE" > "$QT_ANDROID_KEYSTORE_PATH"
           trap 'rm -f "$QT_ANDROID_KEYSTORE_PATH"' EXIT
           "$QT_ROOT_DIR/bin/qt-cmake" -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -479,17 +479,17 @@ jobs:
           apk=$(find build -name '*release-signed.apk' | head -1)
           [ -n "$apk" ] || { echo "::error::no signed .apk was made"; find build -name '*.apk'; exit 1; }
           mkdir dist
-          cp "$apk" "dist/axent-pos-$VERSION.apk"
-          echo "Built axent-pos-$VERSION.apk."
+          cp "$apk" "dist/wira-pos-$VERSION.apk"
+          echo "Built wira-pos-$VERSION.apk."
 
-      - name: Signed by AXENT, and nothing of the Activator in it
+      - name: Signed by Wira Systems, and nothing of the Activator in it
         run: |
           set -euo pipefail
-          apk="dist/axent-pos-$VERSION.apk"
+          apk="dist/wira-pos-$VERSION.apk"
           signer=$("$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$apk" \
             | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
           if [ "$signer" != "$CERTIFICATE" ]; then
-            echo "::error::the .apk is not signed with AXENT's key (signed by $signer)"
+            echo "::error::the .apk is not signed with Wira Systems' key (signed by $signer)"
             exit 1
           fi
           if unzip -l "$apk" | grep -iE "ledgry-keys|activator"; then
@@ -497,7 +497,7 @@ jobs:
             exit 1
           fi
           ls -l "$apk" | awk '{ printf "%s  %.1f MB\n", $9, $5 / 1048576 }'
-          echo "Signed by AXENT's key."
+          echo "Signed by Wira Systems' key."
 
       - name: A phone to try it on
         run: |
@@ -507,15 +507,15 @@ jobs:
           # What the phone does, as one script: the emulator's runner takes its script a line at a time.
           cat > "$RUNNER_TEMP/phone.sh" <<'PHONE'
           set -euo pipefail
-          adb install -r "dist/axent-pos-$VERSION.apk" > /dev/null
+          adb install -r "dist/wira-pos-$VERSION.apk" > /dev/null
           adb logcat -c
-          adb shell am start -W -n com.axentlabs.pos/org.qtproject.qt.android.bindings.QtActivity > /dev/null
+          adb shell am start -W -n com.wirasystems.pos/org.qtproject.qt.android.bindings.QtActivity > /dev/null
           sleep 25
           adb exec-out screencap -p > "$RUNNER_TEMP/phone.png" || true
           qml=$(adb logcat -d | grep -cE "qrc:/qt/qml/" || true)
           if [ "$qml" != "0" ]; then echo "QML said $qml things:"; adb logcat -d | grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" | sort | uniq -c | head -20; fi
-          if [ -z "$(adb shell pidof com.axentlabs.pos | tr -d '\r')" ]; then
-            echo "::error::AXENT POS stopped by itself on the phone"
+          if [ -z "$(adb shell pidof com.wirasystems.pos | tr -d '\r')" ]; then
+            echo "::error::Wira POS stopped by itself on the phone"
             adb logcat -d | grep -E "FATAL|AndroidRuntime|DEBUG  |Abort" | head -30
             exit 1
           fi
@@ -546,7 +546,7 @@ jobs:
         if: needs.find.outputs.try != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/axent-pos-${VERSION}.apk" -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" "dist/wira-pos-${VERSION}.apk" -R "$GITHUB_REPOSITORY" --clobber
 
   dmg:
     name: The .dmg, for macOS
@@ -562,7 +562,7 @@ jobs:
       TAG: ${{ needs.find.outputs.tag }}
       RELEASE: ${{ needs.find.outputs.release }}
       VERSION: ${{ needs.find.outputs.version }}
-      APP: AXENT POS.app
+      APP: Wira POS.app
     steps:
       - name: pos, at the tag
         env:
@@ -603,10 +603,10 @@ jobs:
             exit 1
           }
           [ ! -e build/ledgry-keys ] || { echo "::error::the key tool was built"; exit 1; }
-          echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/AXENT POS")."
+          echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/Wira POS")."
 
       - name: Its Qt inside it, and signed for this Mac alone
-        # Unsigned by AXENT until it has an Apple developer account (A-010): signed ad hoc, as an
+        # Unsigned by Wira Systems until it has an Apple developer account (A-010): signed ad hoc, as an
         # Apple Silicon Mac needs before it runs anything, so macOS asks once before opening it.
         run: |
           set -euo pipefail
@@ -617,7 +617,7 @@ jobs:
           # Nothing ships without Qt inside it, and nothing of the Activator's ships at all.
           for needed in Contents/Frameworks/QtCore.framework Contents/Frameworks/QtQuick.framework \
                         Contents/PlugIns/platforms/libqcocoa.dylib Contents/PlugIns/sqldrivers/libqsqlite.dylib \
-                        Contents/Resources/qt.conf Contents/Resources/axent.icns; do
+                        Contents/Resources/qt.conf Contents/Resources/wira.icns; do
             [ -e "build/$APP/$needed" ] || { echo "::error::the app has no $needed"; exit 1; }
           done
           if find "build/$APP" | grep -iE "ledgry-keys|activator"; then
@@ -632,8 +632,8 @@ jobs:
           mkdir -p image dist
           cp -R "build/$APP" image/
           ln -s /Applications image/Applications
-          hdiutil create -quiet -volname "AXENT POS" -srcfolder image -fs HFS+ -format UDZO \
-            -ov "dist/AXENT-POS-$VERSION.dmg"
+          hdiutil create -quiet -volname "Wira POS" -srcfolder image -fs HFS+ -format UDZO \
+            -ov "dist/Wira-POS-$VERSION.dmg"
           ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
 
       - name: Installed, opened and taken out again
@@ -641,27 +641,27 @@ jobs:
         # running a while, its data made where it keeps it; then the Intel half the same way.
         run: |
           set -euo pipefail
-          mount=$(hdiutil attach -nobrowse -readonly "dist/AXENT-POS-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
+          mount=$(hdiutil attach -nobrowse -readonly "dist/Wira-POS-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
           cp -R "$mount/$APP" /Applications/
           hdiutil detach -quiet "$mount"
-          program="/Applications/$APP/Contents/MacOS/AXENT POS"
+          program="/Applications/$APP/Contents/MacOS/Wira POS"
           for arch in arm64 x86_64; do
             if [ "$arch" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2> /dev/null; then
               echo "No Rosetta on this Mac: the Intel half is built, not opened."
               continue
             fi
-            rm -rf "$HOME/Library/Application Support/AXENT"
+            rm -rf "$HOME/Library/Application Support/Wira"
             arch -"$arch" "$program" --demo > "$RUNNER_TEMP/app-$arch.log" 2>&1 &
             app=$!
             sleep 15
             if ! kill -0 "$app" 2> /dev/null; then
-              echo "::error::AXENT POS stopped by itself on $arch"
+              echo "::error::Wira POS stopped by itself on $arch"
               grep -E "qrc:/|Fatal|fatal|Abort" "$RUNNER_TEMP/app-$arch.log" | head -30
               exit 1
             fi
             [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
-            shop=$(find "$HOME/Library/Application Support/AXENT" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
-            [ -n "$shop" ] || { echo "::error::AXENT POS made no demo shop on $arch"; exit 1; }
+            shop=$(find "$HOME/Library/Application Support/Wira" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
+            [ -n "$shop" ] || { echo "::error::Wira POS made no demo shop on $arch"; exit 1; }
             qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
             [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
             kill "$app"
@@ -677,7 +677,7 @@ jobs:
           name: mac
           path: |
             ${{ runner.temp }}/mac.png
-            dist/AXENT-POS-*.dmg
+            dist/Wira-POS-*.dmg
           retention-days: 1
           if-no-files-found: ignore
 
@@ -685,7 +685,7 @@ jobs:
         if: needs.find.outputs.try != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/AXENT-POS-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" "dist/Wira-POS-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
 
   publish:
     name: Publish the release
