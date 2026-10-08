@@ -367,8 +367,11 @@ jobs:
           $app = Start-Process "C:\AXENT-POS\bin\axent.exe" -ArgumentList "--demo" -PassThru
           Start-Sleep -Seconds 15
           if ($app.HasExited) { Write-Error "AXENT POS stopped by itself, with $($app.ExitCode)"; exit 1 }
-          $shop = Join-Path $env:APPDATA "AXENT\AXENT\ledgry-demo.sqlite"
-          if (-not (Test-Path $shop)) { Write-Error "AXENT POS made no demo shop at $shop"; exit 1 }
+          # Found wherever AXENT keeps it under its data folder, as on Linux and macOS: since pos's
+          # bug bounty the demo shop is in a folder of its own, demo\ledgry-demo.sqlite.
+          $shop = Get-ChildItem (Join-Path $env:APPDATA "AXENT") -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $shop) { Write-Error "AXENT POS made no demo shop under $env:APPDATA\AXENT"; exit 1 }
+          Write-Output "Its demo shop at $($shop.FullName)."
           Stop-Process -Id $app.Id -Force
           Start-Process "C:\AXENT-POS\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
           Write-Output "Installed, opened on the demo shop for 15 seconds, and uninstalled."
