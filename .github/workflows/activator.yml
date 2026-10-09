@@ -1,0 +1,308 @@
+# The Activator's installers (wira-systems/activator, its A-015): run by hand for a tag of the
+# private activator, they are built here, where Linux, Windows and macOS machines are free, and
+# handed to the activator's own releases, never published here. Its source is read with a
+# read-only deploy key, the secret ACTIVATOR_DEPLOY_KEY, and only the finished files leave a build:
+# no step prints the source, and the logs, which are public, show only what went wrong.
+#
+# The files pass through a draft release here, which only the organization sees; once all three
+# are built they are put on the activator's release for the tag, with the token ACTIVATOR_TOKEN
+# (contents, read and write, on wira-systems/activator alone), and the draft is deleted, built or
+# not. Nothing of the Activator's ever stays in this repository.
+
+name: Activator
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "A tag of wira-systems/activator to build, as v0.1.0"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-activator
+  cancel-in-progress: false
+
+env:
+  ACTIVATOR: git@github.com:wira-systems/activator.git
+  TARGET: wira-systems/activator
+  QT_VERSION: "6.8.3"
+
+jobs:
+  find:
+    name: The tag, and its draft here
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      beta: ${{ steps.tag.outputs.beta }}
+      draft: ${{ steps.tag.outputs.draft }}
+    steps:
+      - name: A tag of the activator
+        id: tag
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIVATOR_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/activator-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          tags=$(GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git ls-remote --tags --refs "$ACTIVATOR" 'v*' | sed 's#.*refs/tags/##')
+          rm "$key"
+          if ! grep -qx -- "$TAG" <<<"$tags"; then
+            echo "::error::$TAG is not a tag of the activator"
+            exit 1
+          fi
+          version="${TAG#v}"
+          { echo "tag=$TAG"; echo "version=$version"; echo "draft=activator-$TAG-in-transit"
+            if [[ "$version" == *-* ]]; then echo "beta=true"; else echo "beta=false"; fi; } >> "$GITHUB_OUTPUT"
+
+      - name: Its draft, which only the organization sees
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRAFT: activator-${{ inputs.tag }}-in-transit
+        run: |
+          set -euo pipefail
+          gh release delete "$DRAFT" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$DRAFT" -R "$GITHUB_REPOSITORY" --draft --target main \
+            --title "Activator ${{ inputs.tag }}, in transit" \
+            --notes "Being built for the activator's own release; deleted once handed over."
+
+  deb:
+    name: The .deb, for Ubuntu and Debian
+    needs: find
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      VERSION: ${{ needs.find.outputs.version }}
+      DRAFT: ${{ needs.find.outputs.draft }}
+    steps:
+      - name: The activator, at the tag
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIVATOR_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/activator-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$ACTIVATOR" activator
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+
+      - name: The libraries Qt and the keychain need
+        run: >
+          sudo apt-get update -qq &&
+          sudo apt-get install -y -qq ninja-build ccache file libgl1-mesa-dev libegl1 libxkbcommon-dev
+          libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+          libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-xkb1 libfontconfig1-dev libsecret-1-dev
+          libwayland-dev > /dev/null
+
+      - name: Built, alone
+        # Into logs that stay on the runner: only what went wrong is shown, never the source.
+        run: |
+          set -euo pipefail
+          cd activator
+          cmake --preset linux-release -DBUILD_TESTING=OFF > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
+          cmake --build --preset linux-release --target activator > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
+          test -x build/linux-release/activator
+          echo "Built the Activator $VERSION."
+
+      - name: The .deb, nothing secret in it
+        env:
+          QMAKE: ${{ env.QT_ROOT_DIR }}/bin/qmake
+        run: |
+          set -euo pipefail
+          activator/packaging/deb.sh activator/build/linux-release dist > deb.log 2>&1 || { tail -20 deb.log; exit 1; }
+          if dpkg-deb -c dist/*.deb | grep -iE "\.key$|\.sqlite|\.activatorbackup|register\.tsv"; then
+            echo "::error::the .deb carries something secret"
+            exit 1
+          fi
+          ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
+
+      - name: Into the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$DRAFT" dist/*.deb -R "$GITHUB_REPOSITORY" --clobber
+
+  exe:
+    name: The .exe, for Windows
+    needs: find
+    runs-on: windows-2022
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      VERSION: ${{ needs.find.outputs.version }}
+      DRAFT: ${{ needs.find.outputs.draft }}
+    steps:
+      - name: The activator, at the tag
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIVATOR_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/activator-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$ACTIVATOR" activator
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Built alone, and installed with its Qt
+        # Into logs that stay on the runner: only what went wrong is shown, never the source.
+        shell: pwsh
+        run: |
+          Set-Location activator
+          cmake --preset windows-release -DBUILD_TESTING=OFF *> ..\configure.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
+          cmake --build --preset windows-release --target activator *> ..\build.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
+          cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
+          Set-Location ..
+          foreach ($needed in "bin\activator.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
+            if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
+          }
+          $secret = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match '\.key$|\.sqlite$|\.activatorbackup$|register\.tsv' }
+          if ($secret) { $secret | ForEach-Object { $_.FullName }; Write-Error "the install carries something secret"; exit 1 }
+          Write-Output "Built and installed the Activator $env:VERSION."
+
+      - name: The .exe
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" activator\packaging\activator.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Into the draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$DRAFT" dist/*.exe -R "$GITHUB_REPOSITORY" --clobber
+
+  dmg:
+    name: The .dmg, for macOS
+    needs: find
+    runs-on: macos-14
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      VERSION: ${{ needs.find.outputs.version }}
+      DRAFT: ${{ needs.find.outputs.draft }}
+    steps:
+      - name: The activator, at the tag
+        env:
+          DEPLOY_KEY: ${{ secrets.ACTIVATOR_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/activator-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$ACTIVATOR" activator
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: The .dmg, for Apple Silicon and Intel, signed ad hoc, nothing secret in it
+        # packaging/macos.sh keeps the build's own output to itself, never printing the source.
+        run: |
+          set -euo pipefail
+          command -v ninja > /dev/null || brew install ninja > /dev/null
+          ( cd activator && packaging/macos.sh )
+          mkdir -p dist && mv activator/dist/*.dmg dist/
+          ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
+
+      - name: Into the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$DRAFT" dist/*.dmg -R "$GITHUB_REPOSITORY" --clobber
+
+  handover:
+    name: Handed to the activator's release
+    needs: [find, deb, exe, dmg]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      VERSION: ${{ needs.find.outputs.version }}
+      DRAFT: ${{ needs.find.outputs.draft }}
+      BETA: ${{ needs.find.outputs.beta }}
+    steps:
+      - name: The three files, from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$DRAFT" -R "$GITHUB_REPOSITORY" -D files
+          ls files
+
+      - name: On the activator's release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.ACTIVATOR_TOKEN }}
+        run: |
+          set -euo pipefail
+          {
+            echo "The Activator $VERSION, for Wira Systems' own computers only: never share these files."
+            echo
+            echo "| File | For | To install |"
+            echo "| --- | --- | --- |"
+            echo "| \`activator_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./activator_${VERSION}_amd64.deb\` |"
+            echo "| \`Activator-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+            echo "| \`Activator-${VERSION}.dmg\` | macOS | Open it and drag Activator to Applications. The first time, choose **Done**, then in System Settings, Privacy & Security, **Open Anyway**. |"
+            echo
+            echo "The register and the signing keys are never in an installer: they reach a new computer as a backup restored there."
+          } > notes.md
+          if gh release view "$TAG" -R "$TARGET" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$TARGET" --clobber
+          else
+            flags=(--verify-tag --title "Activator $VERSION" --notes-file notes.md)
+            [ "$BETA" = "true" ] && flags+=(--prerelease)
+            gh release create "$TAG" files/* -R "$TARGET" "${flags[@]}"
+          fi
+          echo "On $TARGET's release $TAG."
+
+  cleanup:
+    name: The draft deleted
+    needs: [find, handover]
+    if: always() && needs.find.outputs.draft != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Nothing of the Activator's left here
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ needs.find.outputs.draft }}" -R "$GITHUB_REPOSITORY" --yes || true
