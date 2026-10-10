@@ -1,49 +1,43 @@
-# Wira POS's releases (wira-systems/pos, A-010, A-247): every hour, and whenever run by hand for a
-# tag, a release tag of the private pos that has no release here yet is built into the files a
-# shop installs, and published here, its release named for the app, pos-v1.2.0 for pos's v1.2.0, so
-# other apps' releases can stand beside it. This repository holds no source, and its logs are public: no step
-# prints the source, only the finished files leave a build, and a release says what each file is
-# and how to install it, never the commits behind it, which stay on pos's own releases.
+# Wira POS's installers (wira-systems/pos, A-010, A-247, A-255): run by hand for a tag of the
+# private pos, they are built here, where Linux, Windows and macOS machines are free, and handed to
+# pos's own release for the tag, never published here. pos is read with a read-only deploy key, the
+# secret POS_DEPLOY_KEY, and only the finished files leave a build: no step prints the source, and
+# the logs, which are public, show only what went wrong.
 #
-# pos is read with a read-only deploy key, the secret POS_DEPLOY_KEY. Nothing is published until
-# every file of a release is built: a release is made as a draft, the builds attach their files,
-# and it is published last, as a pre-release for a beta and as the latest for a release.
-# Publishing is switched on by the repository variable PUBLISH, set to true once the builds are
-# in place (P12-M06); until then every release stays a draft, which only the organization sees.
+# The files pass through a draft release here, which only the organization sees; once every one is
+# built they are put on pos's release for the tag, with the token POS_TOKEN (contents, read and
+# write, on wira-systems/pos alone), and the draft is deleted, built or not. Shops get Wira POS from
+# the app stores, not from here (pos's A-255). The README says how a release is made, step by step.
 
 name: Wira POS
 
 on:
-  schedule:
-    - cron: "23 * * * *" # every hour
   workflow_dispatch:
     inputs:
       tag:
-        description: "A tag of wira-systems/pos to build, as v0.9.0; empty for the newest not yet built"
+        description: "A tag of wira-systems/pos to build, as v0.10.0"
         required: false
       try:
         description: "Or a branch of pos, only to try its builds: nothing is uploaded nor published"
         required: false
       only:
-        description: "The one build to run: deb, exe, apk or dmg; empty for every one. With a tag whose release is still a draft, that file is built again into it"
+        description: "The one build to run: deb, exe, apk or dmg; empty for every one. With a tag, that file alone is built and put on pos's release in place of the one there"
         required: false
 
 permissions:
   contents: write
 
-# One release at a time: an hourly run never starts beside one still building.
+# One release at a time.
 concurrency:
   group: release-pos
   cancel-in-progress: false
 
 env:
   POS: git@github.com:wira-systems/pos.git
-  # A release here is named for its app: pos-v1.2.0 for pos's v1.2.0.
+  # The draft a tag's files pass through here: pos-v1.2.0-in-transit for pos's v1.2.0.
   APP: pos
+  TARGET: wira-systems/pos
   QT_VERSION: "6.8.3"
-  # Released from the release repository before this one: never built on the hour, only
-  # when asked.
-  BEFORE: "v0.1.0 v0.1.0-beta.1 v0.1.0-beta.2 v0.1.0-beta.3 v0.1.1 v0.1.1-beta.1 v0.2.0 v0.2.0-beta.1 v0.2.1 v0.2.1-beta.1 v0.3.0 v0.3.0-beta.1 v0.4.0 v0.4.0-beta.1 v0.4.0-beta.2 v0.4.1 v0.4.1-beta.1 v0.5.0 v0.5.0-beta.1 v0.6.0 v0.6.0-beta.1 v0.7.0 v0.7.0-beta.1 v0.8.0 v0.8.0-beta.1 v0.9.0 v0.9.0-beta.1"
 
 jobs:
   find:
@@ -57,7 +51,7 @@ jobs:
       try: ${{ steps.pick.outputs.try }}
       only: ${{ steps.pick.outputs.only }}
     steps:
-      - name: Read pos's tags, and the releases already here
+      - name: Read pos's tags
         id: pick
         env:
           DEPLOY_KEY: ${{ secrets.POS_DEPLOY_KEY }}
@@ -82,50 +76,23 @@ jobs:
           ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/pos -o IdentitiesOnly=yes"
           tags=$(git ls-remote --tags --refs "$POS" 'v*' | sed 's#.*refs/tags/##' | sort -V)
-          # pos's tags with a release here, each named for the app.
-          made=$(gh release list -R "$GITHUB_REPOSITORY" --limit 500 --json tagName --jq '.[].tagName' \
-            | sed -n "s#^$APP-##p")
-          pick=""
-          if [ -n "$ASKED" ]; then
-            if ! grep -qx -- "$ASKED" <<<"$tags"; then
-              echo "::error::$ASKED is not a tag of wira-systems/pos"
-              exit 1
-            fi
-            if grep -qx -- "$ASKED" <<<"$made"; then
-              # One file built again into its draft, as a Windows build that failed its check;
-              # a published release, or all its files at once, is never built again.
-              draft=$(gh release view "$APP-$ASKED" -R "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)
-              if [ "${ONLY:-all}" = "all" ] || [ "$draft" != "true" ]; then
-                echo "::error::$ASKED has a release here already; delete it first to build it again, or name the one file to build again into its draft"
-                exit 1
-              fi
-              echo "Building pos's $ASKED again, its $ONLY alone, into its draft."
-            fi
-            pick="$ASKED"
-          else
-            # The newest release tag with no release here, but for those from before this repository
-            # and v0.9.0, built as AXENT POS. A beta is built only when asked for by hand: staging's
-            # beta is a formality, and installers are for the release.
-            for tag in $(tac <<<"$tags"); do
-              grep -qx -- "$tag" <<<"$made" && continue
-              [[ " $BEFORE " == *" $tag "* ]] && continue
-              [[ "$tag" == *-* ]] && continue
-              pick="$tag"
-              break
-            done
+          if [ -z "$ASKED" ]; then
+            echo "::error::Name a tag of wira-systems/pos to build, as v0.10.0"
+            exit 1
           fi
-          if [ -z "$pick" ]; then
-            echo "Nothing to build: every release tag of pos has its release here."
-          else
-            echo "Building $pick."
+          if ! grep -qx -- "$ASKED" <<<"$tags"; then
+            echo "::error::$ASKED is not a tag of wira-systems/pos"
+            exit 1
           fi
+          pick="$ASKED"
+          echo "Building $pick."
           echo "tag=$pick" >> "$GITHUB_OUTPUT"
-          echo "release=${pick:+$APP-$pick}" >> "$GITHUB_OUTPUT"
+          echo "release=${pick:+$APP-$pick-in-transit}" >> "$GITHUB_OUTPUT"
           echo "version=${pick#v}" >> "$GITHUB_OUTPUT"
           [[ "$pick" == *-* ]] && echo "beta=true" >> "$GITHUB_OUTPUT" || echo "beta=false" >> "$GITHUB_OUTPUT"
 
   draft:
-    name: Make the release, as a draft
+    name: Its draft here, which only the organization sees
     needs: find
     if: needs.find.outputs.tag != '' && needs.find.outputs.try != 'true'
     runs-on: ubuntu-24.04
@@ -158,14 +125,11 @@ jobs:
             echo
             echo "Questions: Wira POS's About page, under Help, has how to reach us."
           } > notes.md
-          # Its draft already here, one file built again into it: kept as it is.
-          if gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "$RELEASE is here already, as a draft: the file goes into it."
-            exit 0
-          fi
-          flags=(--draft --title "Wira POS $VERSION" --notes-file notes.md)
-          [ "$BETA" = "true" ] && flags+=(--prerelease)
-          gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main "${flags[@]}"
+          # A draft of its own each time, which only the organization sees; the notes go with the
+          # files to pos's release.
+          gh release delete "$RELEASE" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main --draft \
+            --title "Wira POS $VERSION, in transit" --notes-file notes.md
 
   # Each build attaches its file to the draft: the .deb, the .exe and the .dmg, for a beta and a
   # release alike (pos's A-086); the .apk only when asked for by name. Each builds the program
@@ -690,27 +654,55 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$RELEASE" "dist/Wira-POS-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
 
-  publish:
-    name: Publish the release
+  handover:
+    name: Handed to pos's release
     needs: [find, draft, deb, exe, apk, dmg]
-    # Once every file is attached: the .deb, the .exe and the .dmg, a beta's as a release's.
+    # Once every file asked for is in the draft.
     if: >-
-      always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' && vars.PUBLISH == 'true' &&
+      always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' &&
       (needs.deb.result == 'success' || (needs.deb.result == 'skipped' && !contains(fromJSON('["all", "deb"]'), needs.find.outputs.only))) &&
       (needs.exe.result == 'success' || (needs.exe.result == 'skipped' && !contains(fromJSON('["all", "exe"]'), needs.find.outputs.only))) &&
       (needs.apk.result == 'success' || (needs.apk.result == 'skipped' && needs.find.outputs.only != 'apk')) &&
       (needs.dmg.result == 'success' || (needs.dmg.result == 'skipped' && !contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)))
     runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BETA: ${{ needs.find.outputs.beta }}
     steps:
-      - name: Published, as the latest or a pre-release
+      - name: The files, and their notes, from the draft
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE: ${{ needs.find.outputs.release }}
-          BETA: ${{ needs.find.outputs.beta }}
         run: |
           set -euo pipefail
-          if [ "$BETA" = "true" ]; then
-            gh release edit "$RELEASE" -R "$GITHUB_REPOSITORY" --draft=false --prerelease
+          gh release download "$RELEASE" -R "$GITHUB_REPOSITORY" -D files
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          ls files
+
+      - name: On pos's release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.POS_TOKEN }}
+        run: |
+          set -euo pipefail
+          # pos's release for the tag is made by its own release script, with its changelog; the
+          # files join it, each replacing one there already. Where there is none, one is made.
+          if gh release view "$TAG" -R "$TARGET" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$TARGET" --clobber
           else
-            gh release edit "$RELEASE" -R "$GITHUB_REPOSITORY" --draft=false --latest
+            flags=(--verify-tag --title "Wira POS $VERSION" --notes-file notes.md)
+            [ "$BETA" = "true" ] && flags+=(--prerelease)
+            gh release create "$TAG" files/* -R "$TARGET" "${flags[@]}"
           fi
+          echo "On $TARGET's release $TAG."
+
+  cleanup:
+    name: The draft deleted
+    needs: [find, handover]
+    if: always() && needs.find.outputs.release != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Nothing of pos's left here
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ needs.find.outputs.release }}" -R "$GITHUB_REPOSITORY" --yes || true
