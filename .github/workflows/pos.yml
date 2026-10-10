@@ -120,6 +120,7 @@ jobs:
             echo "| --- | --- | --- |"
             ! builds deb || echo "| \`wira-pos_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./wira-pos_${VERSION}_amd64.deb\` |"
             ! builds exe || echo "| \`Wira-POS-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+            ! builds exe || echo "| \`Wira-POS-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
             [ "$ONLY" != "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
             ! builds dmg || echo "| \`Wira-POS-${VERSION}.dmg\` | macOS | Open it and drag Wira POS to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
@@ -354,12 +355,48 @@ jobs:
           Start-Process "C:\Wira-POS\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
           Write-Output "Installed, opened on the demo shop for 15 seconds, and uninstalled."
 
+      - name: The .msix, for the Microsoft Store
+        # The same installed files, with pos's packaging/msix manifest and icons, packed unsigned:
+        # the Store signs it (pos's A-256). Its identity is the one Partner Center reserved for Wira
+        # POS, in the repository variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER and
+        # MSIX_PUBLISHER_DISPLAY_NAME; until they are set it is made only on a try, with stand-ins.
+        shell: pwsh
+        env:
+          IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          TRY: ${{ needs.find.outputs.try }}
+        run: |
+          $reserved = $env:IDENTITY_NAME -and $env:PUBLISHER -and $env:PUBLISHER_DISPLAY_NAME
+          if (-not $reserved -and $env:TRY -ne "true") {
+            Write-Output "::warning::No .msix: set MSIX_IDENTITY_NAME, MSIX_PUBLISHER and MSIX_PUBLISHER_DISPLAY_NAME from Partner Center first."
+            exit 0
+          }
+          $name = if ($reserved) { $env:IDENTITY_NAME } else { "WiraSystems.WiraPOS" }
+          $publisher = if ($reserved) { $env:PUBLISHER } else { "CN=00000000-0000-0000-0000-000000000000" }
+          $display = if ($reserved) { $env:PUBLISHER_DISPLAY_NAME } else { "Wira Systems" }
+          # A Store version is four numbers, the last 0: a beta's suffix left off.
+          $numbers = ($env:VERSION -split "-")[0]
+          New-Item -ItemType Directory msix | Out-Null
+          Copy-Item -Recurse stage\* msix\
+          Copy-Item -Recurse pos\packaging\msix\Assets msix\Assets
+          (Get-Content pos\packaging\msix\AppxManifest.xml -Raw) `
+            -replace "@IDENTITY_NAME@", $name -replace "@PUBLISHER@", $publisher `
+            -replace "@PUBLISHER_DISPLAY_NAME@", $display -replace "@VERSION@", "$numbers.0" |
+            Set-Content -Encoding utf8 msix\AppxManifest.xml
+          $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
+            Sort-Object FullName | Select-Object -Last 1
+          if (-not $makeappx) { Write-Error "makeappx is not on this machine"; exit 1 }
+          & $makeappx.FullName pack /d msix /p "dist\Wira-POS-$env:VERSION.msix" /o /h SHA256 *> msix.log
+          if ($LASTEXITCODE -ne 0) { Get-Content msix.log | Select-Object -Last 30; exit 1 }
+          Get-ChildItem dist\*.msix | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
       - name: Attached to the draft
         if: needs.find.outputs.try != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/Wira-POS-${VERSION}-setup.exe" -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" dist/Wira-POS-${VERSION}-setup.exe $(ls dist/*.msix 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber
 
   # Wira POS is for desktops for now (A-020): the .apk is built only when asked for by name, and
   # those already published stay.
