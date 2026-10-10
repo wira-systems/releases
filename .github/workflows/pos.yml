@@ -367,6 +367,11 @@ jobs:
           PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
           TRY: ${{ needs.find.outputs.try }}
         run: |
+          # A tag from before pos had its MSIX manifest (its A-256) makes no .msix, and fails nothing.
+          if (-not (Test-Path pos\packaging\msix\AppxManifest.xml)) {
+            Write-Output "::warning::No .msix: pos at $env:TAG has no packaging/msix, which came with v0.10.2."
+            exit 0
+          }
           $reserved = $env:IDENTITY_NAME -and $env:PUBLISHER -and $env:PUBLISHER_DISPLAY_NAME
           if (-not $reserved -and $env:TRY -ne "true") {
             Write-Output "::warning::No .msix: set MSIX_IDENTITY_NAME, MSIX_PUBLISHER and MSIX_PUBLISHER_DISPLAY_NAME from Partner Center first."
