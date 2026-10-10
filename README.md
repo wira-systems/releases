@@ -83,11 +83,25 @@ Shops install Wira POS from the stores, which take a store package and an accoun
 
 | Store | Account | Package |
 | --- | --- | --- |
-| Microsoft Store | Partner Center, as a company | MSIX |
+| Microsoft Store | Partner Center, as a company | MSIX, built (see below) |
 | Mac App Store | Apple Developer Program | a sandboxed, signed and notarised app |
 | Snap Store (Ubuntu) | Snapcraft, as Wira Systems | snap |
 
-Building those packages here and sending them to the stores is planned work, not done yet; until then the installers on pos's releases are for Wira Systems' own use and testing.
+### Microsoft Store
+
+The Windows build also makes `Wira-POS-x.y.z.msix`, unsigned, beside the `.exe` on pos's release: the Store signs MSIX packages itself and hosts them, so no certificate is bought. (A setup `.exe` was refused under policy 10.2.9 for being unsigned; that is why.) Its identity comes from three repository **variables** here, copied from Partner Center → the Wira POS app → **Product management → Product identity**:
+
+| Variable | From Partner Center |
+| --- | --- |
+| `MSIX_IDENTITY_NAME` | Package/Identity/Name |
+| `MSIX_PUBLISHER` | Package/Identity/Publisher, starting `CN=` |
+| `MSIX_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
+
+They are not secret; the agent sets them with `gh variable set NAME -R wira-systems/releases --body "…"`. Until they are set a release makes no `.msix`, with a warning. To send a version to the Store, **you** download the `.msix` from pos's release, open Partner Center → Wira POS → **Start an update** (or the first submission), upload it under **Packages**, fill or keep the listing, and submit for certification. The agent can draft the listing's words.
+
+### Mac App Store and Snap Store
+
+Planned, not built yet: each needs your account first.
 
 ## Help
 
