@@ -190,8 +190,8 @@ jobs:
         run: |
           set -euo pipefail
           cd pos
-          cmake --preset linux-release > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
-          cmake --build --preset linux-release --target ledgry > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
+          cmake --preset linux-release -DWIRA_VERSION_NAME="$VERSION" > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
+          cmake --build --preset linux-release --target wira > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
           test -x build/linux-release/wira
           if [ -e build/linux-release/ledgry-keys ]; then echo "::error::the key tool was built"; exit 1; fi
           echo "Built wira $VERSION."
@@ -199,7 +199,7 @@ jobs:
       - name: The .deb
         env:
           QMAKE: ${{ env.QT_ROOT_DIR }}/bin/qmake
-          LEDGRY_VERSION: ${{ needs.find.outputs.version }}
+          WIRA_VERSION: ${{ needs.find.outputs.version }}
         run: |
           set -euo pipefail
           mkdir dist
@@ -309,9 +309,9 @@ jobs:
         shell: pwsh
         run: |
           Set-Location pos
-          cmake --preset windows-release *> ..\configure.log
+          cmake --preset windows-release "-DWIRA_VERSION_NAME=$env:VERSION" *> ..\configure.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
-          cmake --build --preset windows-release --target ledgry *> ..\build.log
+          cmake --build --preset windows-release --target wira *> ..\build.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
           if (Test-Path build\windows-release\ledgry-keys.exe) { Write-Error "the key tool was built"; exit 1 }
           # Qt's deploy step takes only an absolute prefix.
@@ -479,7 +479,7 @@ jobs:
           "$QT_ROOT_DIR/bin/qt-cmake" -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQT_HOST_PATH="$(dirname "$QT_ROOT_DIR")/gcc_64" \
             -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" -DANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK" \
-            -DQT_ANDROID_SIGN_APK=ON -DLEDGRY_VERSION_NAME="$VERSION" -DBUILD_TESTING=OFF \
+            -DQT_ANDROID_SIGN_APK=ON -DWIRA_VERSION_NAME="$VERSION" -DBUILD_TESTING=OFF \
             > configure.log 2>&1 || { grep -E -A8 "CMake Error" configure.log | head -60; exit 1; }
           cmake --build build --target apk > build.log 2>&1 || {
             grep -E ": (fatal )?error:|FAILURE|What went wrong|> [A-Z]" build.log | head -30
@@ -605,9 +605,9 @@ jobs:
           command -v ninja > /dev/null || brew install ninja > /dev/null
           cmake -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-            -DLEDGRY_VERSION_NAME="$VERSION" \
+            -DWIRA_VERSION_NAME="$VERSION" \
             > configure.log 2>&1 || { grep -E -A8 "CMake Error" configure.log | head -60; exit 1; }
-          cmake --build build --target ledgry > build.log 2>&1 || {
+          cmake --build build --target wira > build.log 2>&1 || {
             grep -E ": (fatal )?error:|ld: " build.log | head -30
             exit 1
           }

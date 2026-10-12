@@ -9,7 +9,7 @@
 #   packaging/deb.sh POS_DIR BUILD_DIR OUT_DIR
 #
 # POS_DIR is wira-systems/pos at a release's tag, whose menu entry and icon it takes; BUILD_DIR holds
-# a Release build of the program alone (cmake --build ... --target ledgry). Kept here, not in pos,
+# a Release build of the program alone (cmake --build ... --target wira). Kept here, not in pos,
 # so any tag can be packaged, those from before this script too. Needs
 # qmake of the Qt it was built with on PATH, or QMAKE set to it, and dpkg-deb. Refuses to make a
 # package with anything of the Activator's in it: the key tool is never released (A-010).
@@ -21,7 +21,7 @@ source=$(realpath "${1:?the pos checkout}")
 build=$(realpath "${2:?its Release build}")
 out=$(realpath "${3:-.}")
 # The version as CMakeLists.txt has it, or a tag's, v0.1.0-beta.1 as 0.1.0-beta.1.
-version=${LEDGRY_VERSION:-}
+version=${WIRA_VERSION:-}
 version=${version#v}
 version=${version:-$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' "$source/CMakeLists.txt" | head -1)}
 # Debian orders 0.1.0~beta.1 before 0.1.0, as a beta comes before its release.
