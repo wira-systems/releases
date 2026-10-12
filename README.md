@@ -43,6 +43,28 @@ Both workflows run **only by hand**, for a tag of the app that already exists. N
 
 A file that failed can be built again alone: `gh workflow run pos.yml -R wira-systems/releases -f tag=vX.Y.0 -f only=exe` (`deb`, `exe`, `dmg` or `apk`); it replaces the one on pos's release. To try a branch's builds without handing anything over: `-f try=feat/some-branch`.
 
+### Axent POS
+
+The same program, built from the same tag under Axent Labs' name and mark, which Axent Labs hands
+out (pos's A-260). Wira Systems builds it; Axent Labs has no source, no Activator and no key.
+
+| Step | Who | What |
+| --- | --- | --- |
+| 1 | — | Wira POS's release is made first, steps 1 to 7 above: the tag is the same one. |
+| 2 | the agent | Runs the build again for the other brand: `gh workflow run pos.yml -R wira-systems/releases -f tag=vX.Y.0 -f brand=axent`. |
+| 3 | — | The `.deb`, `.exe` and `.dmg` appear on `axent-labs/releases`'s release `vX.Y.0`, named `Axent POS X.Y.Z`. |
+| 4 | **you** | Tell Axent Labs the release is there. |
+
+What differs from Wira POS's run:
+
+- **No `.apk`.** Android is Wira POS's alone; Axent Labs takes the desktop installers.
+- **No `.msix`.** The Store manifest carries Wira POS's own identity from Partner Center (pos's
+  A-256); Axent Labs needs one of its own before a `.msix` can be packed for it.
+- **It needs `AXENT_TOKEN`**, a token with contents read and write on `axent-labs/releases` alone,
+  beside `POS_TOKEN`. Without it the handover stops and says so.
+- **The release there is made by name,** not verified against a tag: a tag of `pos` is no tag of
+  `axent-labs/releases`.
+
 ### Activator
 
 | Step | Who | What |
