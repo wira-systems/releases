@@ -142,9 +142,9 @@ jobs:
           builds() { [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]; }
           {
             if [ "$BETA" = "true" ]; then
-              echo "A beta of Wira POS $VERSION, for trying out before its release."
+              echo "A beta of $PRODUCT $VERSION, for trying out before its release."
             else
-              echo "Wira POS $VERSION."
+              echo "$PRODUCT $VERSION."
             fi
             echo
             echo "| File | For | To install |"
@@ -161,7 +161,7 @@ jobs:
           # files to pos's release.
           gh release delete "$RELEASE" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
           gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main --draft \
-            --title "Wira POS $VERSION, in transit" --notes-file notes.md
+            --title "$PRODUCT $VERSION, in transit" --notes-file notes.md
 
   # Each build attaches its file to the draft: the .deb, the .exe and the .dmg, for a beta and a
   # release alike (pos's A-086); the .apk only when asked for by name. Each builds the program
@@ -276,12 +276,13 @@ jobs:
             exit 1
           fi
           shop=$(find / -xdev -name ledgry-demo.sqlite 2> /dev/null | head -1)
-          [ -n "$shop" ] || { echo "::error::Wira POS made no demo shop on $PRETTY_NAME"; exit 1; }
+          [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $PRETTY_NAME"; exit 1; }
           echo "Installed and opened on the demo shop on $PRETTY_NAME for 15 seconds."
           SHOP
           sed -i 's/^          //' "$RUNNER_TEMP/shop.sh"
           for ubuntu in 22.04 24.04; do
-            docker run --rm -v "$PWD/dist:/dist:ro" -v "$RUNNER_TEMP/shop.sh:/shop.sh:ro" "ubuntu:$ubuntu" bash /shop.sh
+            docker run --rm -e PACKAGE -e PRODUCT -v "$PWD/dist:/dist:ro" \
+              -v "$RUNNER_TEMP/shop.sh:/shop.sh:ro" "ubuntu:$ubuntu" bash /shop.sh
           done
 
       - name: Kept a day, on a try
@@ -623,7 +624,7 @@ jobs:
       SLUG: ${{ needs.find.outputs.slug }}
       PACKAGE: ${{ needs.find.outputs.package }}
       FOLDER: ${{ needs.find.outputs.folder }}
-      APP: Wira POS.app
+      APP: ${{ needs.find.outputs.product }}.app
     steps:
       - name: pos, at the tag
         env:
@@ -664,7 +665,7 @@ jobs:
             exit 1
           }
           [ ! -e build/ledgry-keys ] || { echo "::error::the key tool was built"; exit 1; }
-          echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/Wira POS")."
+          echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/$PRODUCT")."
 
       - name: Its Qt inside it, and signed for this Mac alone
         # Unsigned by Wira Systems until it has an Apple developer account (A-010): signed ad hoc, as an
@@ -693,7 +694,7 @@ jobs:
           mkdir -p image dist
           cp -R "build/$APP" image/
           ln -s /Applications image/Applications
-          hdiutil create -quiet -volname "Wira POS" -srcfolder image -fs HFS+ -format UDZO \
+          hdiutil create -quiet -volname "$PRODUCT" -srcfolder image -fs HFS+ -format UDZO \
             -ov "dist/$SLUG-$VERSION.dmg"
           ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
 
@@ -705,7 +706,7 @@ jobs:
           mount=$(hdiutil attach -nobrowse -readonly "dist/$SLUG-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
           cp -R "$mount/$APP" /Applications/
           hdiutil detach -quiet "$mount"
-          program="/Applications/$APP/Contents/MacOS/Wira POS"
+          program="/Applications/$APP/Contents/MacOS/$PRODUCT"
           for arch in arm64 x86_64; do
             if [ "$arch" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2> /dev/null; then
               echo "No Rosetta on this Mac: the Intel half is built, not opened."
@@ -722,7 +723,7 @@ jobs:
             fi
             [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
             shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
-            [ -n "$shop" ] || { echo "::error::Wira POS made no demo shop on $arch"; exit 1; }
+            [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $arch"; exit 1; }
             qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
             [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
             kill "$app"
