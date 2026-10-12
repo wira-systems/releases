@@ -68,6 +68,7 @@ jobs:
       slug: ${{ steps.pick.outputs.slug }}
       package: ${{ steps.pick.outputs.package }}
       folder: ${{ steps.pick.outputs.folder }}
+      icon: ${{ steps.pick.outputs.icon }}
     steps:
       - name: Read pos's tags
         id: pick
@@ -83,10 +84,10 @@ jobs:
           # What this brand is called, wherever a file or a folder carries its name (pos's A-265).
           if [ "${BRAND:-wira}" = "axent" ]; then
             { echo "brand=axent"; echo "product=Axent POS"; echo "slug=Axent-POS"
-              echo "package=axent-pos"; echo "folder=Axent Labs"; } >> "$GITHUB_OUTPUT"
+              echo "package=axent-pos"; echo "folder=Axent Labs"; echo "icon=axent"; } >> "$GITHUB_OUTPUT"
           else
             { echo "brand=wira"; echo "product=Wira POS"; echo "slug=Wira-POS"
-              echo "package=wira-pos"; echo "folder=Wira"; } >> "$GITHUB_OUTPUT"
+              echo "package=wira-pos"; echo "folder=Wira"; echo "icon=wira"; } >> "$GITHUB_OUTPUT"
           fi
           # A try builds a branch of pos, under a version of its own, and uploads nothing.
           if [ -n "$TRY" ]; then
@@ -185,6 +186,7 @@ jobs:
       SLUG: ${{ needs.find.outputs.slug }}
       PACKAGE: ${{ needs.find.outputs.package }}
       FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -316,6 +318,7 @@ jobs:
       SLUG: ${{ needs.find.outputs.slug }}
       PACKAGE: ${{ needs.find.outputs.package }}
       FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
     steps:
       - name: pos, at the tag
         shell: bash
@@ -624,6 +627,7 @@ jobs:
       SLUG: ${{ needs.find.outputs.slug }}
       PACKAGE: ${{ needs.find.outputs.package }}
       FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
       APP: ${{ needs.find.outputs.product }}.app
     steps:
       - name: pos, at the tag
@@ -679,7 +683,7 @@ jobs:
           # Nothing ships without Qt inside it, and nothing of the Activator's ships at all.
           for needed in Contents/Frameworks/QtCore.framework Contents/Frameworks/QtQuick.framework \
                         Contents/PlugIns/platforms/libqcocoa.dylib Contents/PlugIns/sqldrivers/libqsqlite.dylib \
-                        Contents/Resources/qt.conf Contents/Resources/wira.icns; do
+                        Contents/Resources/qt.conf "Contents/Resources/$ICON.icns"; do
             [ -e "build/$APP/$needed" ] || { echo "::error::the app has no $needed"; exit 1; }
           done
           if find "build/$APP" | grep -iE "ledgry-keys|activator"; then
@@ -770,6 +774,7 @@ jobs:
       SLUG: ${{ needs.find.outputs.slug }}
       PACKAGE: ${{ needs.find.outputs.package }}
       FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
     steps:
       - name: The files, and their notes, from the draft
         env:
