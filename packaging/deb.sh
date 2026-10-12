@@ -159,11 +159,12 @@ depends=$(sort -u <<<"$depends" | sed '/^$/d' | paste -sd, | sed 's/,/, /g')
 size=$(du -sk --exclude=DEBIAN "$root" | cut -f1)
 # Replaces the package the program had before its name changed (pos's A-251), so an upgrade takes
 # it away rather than installing beside it.
-cat > "$root/DEBIAN/control" <<CONTROL
-Package: $package
 # One brand to a machine: both lay the program out as /usr/bin/wira, so dpkg refuses the second
 # rather than quietly overwriting the first. Neither replaces the other: an Axent Labs client's
-# program is not Wira Systems' to take away, nor the other way about (pos's A-263).
+# program is not Wira Systems' to take away, nor the other way about (pos's A-263). A control file
+# takes no comments, so this one stays out here.
+cat > "$root/DEBIAN/control" <<CONTROL
+Package: $package
 Conflicts: $other
 Version: $debversion
 Section: misc

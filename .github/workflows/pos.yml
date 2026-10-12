@@ -64,6 +64,10 @@ jobs:
       try: ${{ steps.pick.outputs.try }}
       only: ${{ steps.pick.outputs.only }}
       brand: ${{ steps.pick.outputs.brand }}
+      product: ${{ steps.pick.outputs.product }}
+      slug: ${{ steps.pick.outputs.slug }}
+      package: ${{ steps.pick.outputs.package }}
+      folder: ${{ steps.pick.outputs.folder }}
     steps:
       - name: Read pos's tags
         id: pick
@@ -76,17 +80,24 @@ jobs:
           ONLY: ${{ inputs.only }}
         run: |
           set -euo pipefail
+          # What this brand is called, wherever a file or a folder carries its name (pos's A-265).
+          if [ "${BRAND:-wira}" = "axent" ]; then
+            { echo "brand=axent"; echo "product=Axent POS"; echo "slug=Axent-POS"
+              echo "package=axent-pos"; echo "folder=Axent Labs"; } >> "$GITHUB_OUTPUT"
+          else
+            { echo "brand=wira"; echo "product=Wira POS"; echo "slug=Wira-POS"
+              echo "package=wira-pos"; echo "folder=Wira"; } >> "$GITHUB_OUTPUT"
+          fi
           # A try builds a branch of pos, under a version of its own, and uploads nothing.
           if [ -n "$TRY" ]; then
             echo "Trying the builds of pos's $TRY, uploading nothing."
             { echo "tag=$TRY"; echo "version=0.0.0-try.1"; echo "beta=true"; echo "try=true";
-              echo "only=${ONLY:-all}"; echo "brand=${BRAND:-wira}"; } >> "$GITHUB_OUTPUT"
+              echo "only=${ONLY:-all}"; } >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "try=false" >> "$GITHUB_OUTPUT"
           # A tag may be built for one platform alone, by hand: deb, exe, apk or dmg.
           echo "only=${ONLY:-all}" >> "$GITHUB_OUTPUT"
-          echo "brand=${BRAND:-wira}" >> "$GITHUB_OUTPUT"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/pos
           chmod 600 ~/.ssh/pos
@@ -122,6 +133,9 @@ jobs:
           VERSION: ${{ needs.find.outputs.version }}
           BETA: ${{ needs.find.outputs.beta }}
           ONLY: ${{ needs.find.outputs.only }}
+          PRODUCT: ${{ needs.find.outputs.product }}
+          SLUG: ${{ needs.find.outputs.slug }}
+          PACKAGE: ${{ needs.find.outputs.package }}
         run: |
           set -euo pipefail
           # Each file's row, only for the files built.
@@ -135,13 +149,13 @@ jobs:
             echo
             echo "| File | For | To install |"
             echo "| --- | --- | --- |"
-            ! builds deb || echo "| \`wira-pos_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./wira-pos_${VERSION}_amd64.deb\` |"
-            ! builds exe || echo "| \`Wira-POS-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
-            ! builds exe || echo "| \`Wira-POS-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
+            ! builds deb || echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
+            ! builds exe || echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+            ! builds exe || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
             [ "$ONLY" != "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
-            ! builds dmg || echo "| \`Wira-POS-${VERSION}.dmg\` | macOS | Open it and drag Wira POS to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
+            ! builds dmg || echo "| \`${SLUG}-${VERSION}.dmg\` | macOS | Open it and drag $PRODUCT to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
-            echo "Questions: Wira POS's About page, under Help, has how to reach us."
+            echo "Questions: $PRODUCT's About page, under Help, has how to reach us."
           } > notes.md
           # A draft of its own each time, which only the organization sees; the notes go with the
           # files to pos's release.
@@ -167,6 +181,10 @@ jobs:
       RELEASE: ${{ needs.find.outputs.release }}
       VERSION: ${{ needs.find.outputs.version }}
       BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -246,14 +264,14 @@ jobs:
           apt-get update -qq > /dev/null
           apt-get install -y -qq /dist/*.deb xvfb xauth libsecret-1-0 python3 > /dev/null
           . /etc/os-release
-          test -e /opt/wira-pos/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
+          test -e /opt/$PACKAGE/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
             || { echo "::error::no Wayland graphics plugin on $PRETTY_NAME"; exit 1; }
-          env LD_LIBRARY_PATH=/opt/wira-pos/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
+          env LD_LIBRARY_PATH=/opt/$PACKAGE/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
             || { echo "::error::the keychain's library does not load beside the .deb's on $PRETTY_NAME"; exit 1; }
           xvfb-run -a wira --demo > /tmp/wira.log 2>&1 &
           sleep 15
           if ! pgrep -x wira > /dev/null; then
-            echo "::error::Wira POS stopped by itself on $PRETTY_NAME"
+            echo "::error::$PRODUCT stopped by itself on $PRETTY_NAME"
             grep -vE "^$" /tmp/wira.log | tail -20
             exit 1
           fi
@@ -278,7 +296,7 @@ jobs:
         if: needs.find.outputs.try != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" dist/wira-pos_${VERSION}_amd64.deb -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" dist/${PACKAGE}_${VERSION}_amd64.deb -R "$GITHUB_REPOSITORY" --clobber
 
   exe:
     name: The .exe, for Windows
@@ -293,6 +311,10 @@ jobs:
       RELEASE: ${{ needs.find.outputs.release }}
       VERSION: ${{ needs.find.outputs.version }}
       BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
     steps:
       - name: pos, at the tag
         shell: bash
@@ -360,19 +382,20 @@ jobs:
         # a while, its data made where it keeps it, then uninstalled.
         shell: pwsh
         run: |
-          $setup = "dist\Wira-POS-$env:VERSION-setup.exe"
-          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=C:\Wira-POS" -Wait
-          if (-not (Test-Path "C:\Wira-POS\bin\wira.exe")) { Write-Error "the installer put no wira.exe in place"; exit 1 }
-          $app = Start-Process "C:\Wira-POS\bin\wira.exe" -ArgumentList "--demo" -PassThru
+          $dir = "C:\$env:SLUG"
+          $setup = "dist\$env:SLUG-$env:VERSION-setup.exe"
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=$dir" -Wait
+          if (-not (Test-Path "$dir\bin\wira.exe")) { Write-Error "the installer put no wira.exe in $dir"; exit 1 }
+          $app = Start-Process "$dir\bin\wira.exe" -ArgumentList "--demo" -PassThru
           Start-Sleep -Seconds 15
-          if ($app.HasExited) { Write-Error "Wira POS stopped by itself, with $($app.ExitCode)"; exit 1 }
+          if ($app.HasExited) { Write-Error "$env:PRODUCT stopped by itself, with $($app.ExitCode)"; exit 1 }
           # Found wherever Wira POS keeps it under its data folder, as on Linux and macOS: since pos's
           # bug bounty the demo shop is in a folder of its own, demo\ledgry-demo.sqlite.
-          $shop = Get-ChildItem (Join-Path $env:APPDATA "Wira") -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $shop) { Write-Error "Wira POS made no demo shop under $env:APPDATA\Wira"; exit 1 }
+          $shop = Get-ChildItem (Join-Path $env:APPDATA $env:FOLDER) -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $shop) { Write-Error "$env:PRODUCT made no demo shop under $env:APPDATA\$env:FOLDER"; exit 1 }
           Write-Output "Its demo shop at $($shop.FullName)."
           Stop-Process -Id $app.Id -Force
-          Start-Process "C:\Wira-POS\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
           Write-Output "Installed, opened on the demo shop for 15 seconds, and uninstalled."
 
       - name: The .msix, for the Microsoft Store
@@ -416,7 +439,7 @@ jobs:
           $makeappx = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\makeappx.exe" |
             Sort-Object FullName | Select-Object -Last 1
           if (-not $makeappx) { Write-Error "makeappx is not on this machine"; exit 1 }
-          & $makeappx.FullName pack /d msix /p "dist\Wira-POS-$env:VERSION.msix" /o /h SHA256 *> msix.log
+          & $makeappx.FullName pack /d msix /p "dist\$env:SLUG-$env:VERSION.msix" /o /h SHA256 *> msix.log
           if ($LASTEXITCODE -ne 0) { Get-Content msix.log | Select-Object -Last 30; exit 1 }
           Get-ChildItem dist\*.msix | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
@@ -425,7 +448,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" dist/Wira-POS-${VERSION}-setup.exe $(ls dist/*.msix 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" dist/${SLUG}-${VERSION}-setup.exe $(ls dist/*.msix 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber
 
   # Wira POS is for desktops for now (A-020): the .apk is built only when asked for by name, and
   # those already published stay.
@@ -595,6 +618,11 @@ jobs:
       TAG: ${{ needs.find.outputs.tag }}
       RELEASE: ${{ needs.find.outputs.release }}
       VERSION: ${{ needs.find.outputs.version }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
       APP: Wira POS.app
     steps:
       - name: pos, at the tag
@@ -666,7 +694,7 @@ jobs:
           cp -R "build/$APP" image/
           ln -s /Applications image/Applications
           hdiutil create -quiet -volname "Wira POS" -srcfolder image -fs HFS+ -format UDZO \
-            -ov "dist/Wira-POS-$VERSION.dmg"
+            -ov "dist/$SLUG-$VERSION.dmg"
           ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
 
       - name: Installed, opened and taken out again
@@ -674,7 +702,7 @@ jobs:
         # running a while, its data made where it keeps it; then the Intel half the same way.
         run: |
           set -euo pipefail
-          mount=$(hdiutil attach -nobrowse -readonly "dist/Wira-POS-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
+          mount=$(hdiutil attach -nobrowse -readonly "dist/$SLUG-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
           cp -R "$mount/$APP" /Applications/
           hdiutil detach -quiet "$mount"
           program="/Applications/$APP/Contents/MacOS/Wira POS"
@@ -683,17 +711,17 @@ jobs:
               echo "No Rosetta on this Mac: the Intel half is built, not opened."
               continue
             fi
-            rm -rf "$HOME/Library/Application Support/Wira"
+            rm -rf "$HOME/Library/Application Support/$FOLDER"
             arch -"$arch" "$program" --demo > "$RUNNER_TEMP/app-$arch.log" 2>&1 &
             app=$!
             sleep 15
             if ! kill -0 "$app" 2> /dev/null; then
-              echo "::error::Wira POS stopped by itself on $arch"
+              echo "::error::$PRODUCT stopped by itself on $arch"
               grep -E "qrc:/|Fatal|fatal|Abort" "$RUNNER_TEMP/app-$arch.log" | head -30
               exit 1
             fi
             [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
-            shop=$(find "$HOME/Library/Application Support/Wira" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
+            shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
             [ -n "$shop" ] || { echo "::error::Wira POS made no demo shop on $arch"; exit 1; }
             qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
             [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
@@ -710,7 +738,7 @@ jobs:
           name: mac
           path: |
             ${{ runner.temp }}/mac.png
-            dist/Wira-POS-*.dmg
+            dist/*.dmg
           retention-days: 1
           if-no-files-found: ignore
 
@@ -718,7 +746,7 @@ jobs:
         if: needs.find.outputs.try != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/Wira-POS-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$RELEASE" "dist/${SLUG}-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
 
   handover:
     name: Handed to the brand's release
@@ -737,6 +765,10 @@ jobs:
       VERSION: ${{ needs.find.outputs.version }}
       BETA: ${{ needs.find.outputs.beta }}
       BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
     steps:
       - name: The files, and their notes, from the draft
         env:
