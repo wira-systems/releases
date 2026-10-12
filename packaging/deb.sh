@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The .deb for Ubuntu and Debian (A-010): Wira POS installed into a folder of its own, linuxdeploy
+# The .deb for Ubuntu and Debian (A-010): the program installed into a folder of its own, linuxdeploy
 # and its Qt plugin gathering beside it the Qt libraries, plugins and QML modules it needs, as for
-# the AppImage, and the whole laid out under /opt/wira-pos, with `wira` on the PATH, its menu
+# the AppImage, and the whole laid out under /opt/<package>, with `wira` on the PATH, its menu
 # entry and its icon. What it needs of the system, OpenGL, fonts, X11 and the like, it asks for as
 # the package's dependencies, read from what the bundled files link to. Removing the package leaves
 # a shop's data, which is kept in each user's own folder.
@@ -21,6 +21,17 @@ source=$(realpath "${1:?the pos checkout}")
 build=$(realpath "${2:?its Release build}")
 out=$(realpath "${3:-.}")
 # The version as CMakeLists.txt has it, or a tag's, v0.1.0-beta.1 as 0.1.0-beta.1.
+# Which brand this package is (pos's A-260, A-265): wira-pos, or Axent Labs' axent-pos from the
+# same source. It decides the package's name, where it is laid out, and whose menu entry and icon
+# it takes; everything else is the same program.
+brand=${WIRA_BRAND:-wira}
+case "$brand" in
+    wira)  package=wira-pos;  stem=wira;  product="Wira POS";  vendor="Wira Systems"; art="$source/packaging" ;;
+    axent) package=axent-pos; stem=axent; product="Axent POS"; vendor="Axent Labs";   art="$source/packaging/axent" ;;
+    *) echo "deb.sh: $brand is no brand; it is wira or axent" >&2; exit 1 ;;
+esac
+other=$([ "$brand" = wira ] && echo axent-pos || echo wira-pos)
+
 version=${WIRA_VERSION:-}
 version=${version#v}
 version=${version:-$(sed -n 's/^ *VERSION \([0-9.]*\)$/\1/p' "$source/CMakeLists.txt" | head -1)}
@@ -65,41 +76,41 @@ export QML_SOURCES_PATHS="$source/qml"
 # Wayland's display plugins beside X11's, so it runs natively on a Wayland desktop, Ubuntu's own.
 export EXTRA_PLATFORM_PLUGINS=${EXTRA_PLATFORM_PLUGINS:-"libqwayland-egl.so;libqwayland-generic.so"}
 (cd "$work" && ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt \
-    --desktop-file AppDir/usr/share/applications/wira.desktop \
-    --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/wira.png > linuxdeploy.log 2>&1) || {
+    --desktop-file "AppDir/usr/share/applications/$stem.desktop" \
+    --icon-file "AppDir/usr/share/icons/hicolor/256x256/apps/$stem.png" > linuxdeploy.log 2>&1) || {
     tail -40 "$work/linuxdeploy.log"
     exit 1
 }
 
-# The package's files: the program and all it carries in /opt/wira-pos, the menu entry and the
+# The package's files: the program and all it carries in /opt/<package>, the menu entry and the
 # icon where the desktop finds them, and `wira` on the PATH.
 root="$work/root"
-mkdir -p "$root/opt/wira-pos" "$root/usr/bin" "$root/usr/share/applications" \
+mkdir -p "$root/opt/$package" "$root/usr/bin" "$root/usr/share/applications" \
          "$root/usr/share/icons/hicolor/256x256/apps" "$root/DEBIAN"
-cp -a "$work/AppDir/usr/." "$root/opt/wira-pos/"
-rm -rf "$root/opt/wira-pos/share/applications" "$root/opt/wira-pos/share/icons"
+cp -a "$work/AppDir/usr/." "$root/opt/$package/"
+rm -rf "$root/opt/$package/share/applications" "$root/opt/$package/share/icons"
 
 # Wayland's graphics plugin, which linuxdeploy leaves out: without it, on a Wayland desktop the
 # program finds no way to draw with OpenGL and closes as it opens. Its libraries are carried already.
-mkdir -p "$root/opt/wira-pos/plugins/wayland-graphics-integration-client"
+mkdir -p "$root/opt/$package/plugins/wayland-graphics-integration-client"
 cp "$qt/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so" \
-   "$root/opt/wira-pos/plugins/wayland-graphics-integration-client/"
+   "$root/opt/$package/plugins/wayland-graphics-integration-client/"
 
 # Only Qt's own libraries are carried. linuxdeploy also copies the system's, GLib's, GnuTLS's,
 # systemd's and more, from the Ubuntu it is built on; on a newer one those older copies are loaded
 # before the system's and break what the system then loads beside them, the keychain's libsecret
 # among them. Each library a system package holds is left to that package, which the package then
 # depends on, as the machine's own copy is always the one its other libraries were built with.
-for library in "$root"/opt/wira-pos/lib/*.so*; do
+for library in "$root"/opt/$package/lib/*.so*; do
     name=$(basename "$library")
     [ -e "$qtlibs/$name" ] && continue
     if dpkg -S "/usr/lib/x86_64-linux-gnu/$name" > /dev/null 2>&1 || dpkg -S "/lib/x86_64-linux-gnu/$name" > /dev/null 2>&1; then
         rm "$library"
     fi
 done
-ln -s /opt/wira-pos/bin/wira "$root/usr/bin/wira"
-cp "$source/packaging/wira.desktop" "$root/usr/share/applications/wira.desktop"
-cp "$source/packaging/wira.png" "$root/usr/share/icons/hicolor/256x256/apps/wira.png"
+ln -s /opt/$package/bin/wira "$root/usr/bin/wira"
+cp "$art/$stem.desktop" "$root/usr/share/applications/$stem.desktop"
+cp "$art/$stem.png" "$root/usr/share/icons/hicolor/256x256/apps/$stem.png"
 
 # Nothing of the Activator's: its key tool is never built for a release, and never shipped.
 if find "$root" -iname '*ledgry-keys*' -o -iname '*activator*' | grep -q .; then
@@ -114,7 +125,7 @@ fi
 # built on need not exist on a newer one. Read as it runs on a shop's machine, with no
 # LD_LIBRARY_PATH of the build's; a library neither carried nor the system's would be missing
 # there, so it stops the package.
-elves=$(find "$root/opt/wira-pos" -type f \( -name '*.so*' -o -perm -u+x \) -exec file {} + \
+elves=$(find "$root/opt/$package" -type f \( -name '*.so*' -o -perm -u+x \) -exec file {} + \
     | grep -E 'ELF .*(executable|shared object)' | cut -d: -f1)
 depends=""
 missing=""
@@ -123,7 +134,7 @@ for elf in $elves; do
     needed=$(readelf -d "$elf" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p')
     found=$(env -u LD_LIBRARY_PATH ldd "$elf" 2>/dev/null || true)
     for soname in $needed; do
-        [ -e "$root/opt/wira-pos/lib/$soname" ] && continue
+        [ -e "$root/opt/$package/lib/$soname" ] && continue
         # ldd prints the loader, ld-linux, as its path alone, with no "=>".
         library=$(awk -v n="$soname" '$1 == n && $3 ~ /^\// { print $3; exit }
             $1 ~ /^\// && $2 ~ /^\(/ && substr($1, length($1) - length(n)) == "/" n { print $1; exit }' <<<"$found")
@@ -149,25 +160,26 @@ size=$(du -sk --exclude=DEBIAN "$root" | cut -f1)
 # Replaces the package the program had before its name changed (pos's A-251), so an upgrade takes
 # it away rather than installing beside it.
 cat > "$root/DEBIAN/control" <<CONTROL
-Package: wira-pos
-Replaces: axent-pos
-Breaks: axent-pos
-Conflicts: axent-pos
+Package: $package
+# One brand to a machine: both lay the program out as /usr/bin/wira, so dpkg refuses the second
+# rather than quietly overwriting the first. Neither replaces the other: an Axent Labs client's
+# program is not Wira Systems' to take away, nor the other way about (pos's A-263).
+Conflicts: $other
 Version: $debversion
 Section: misc
 Priority: optional
 Architecture: amd64
 Installed-Size: $size
 Depends: $depends
-Maintainer: Wira Systems <wira-systems@users.noreply.github.com>
+Maintainer: $vendor <wira-systems@users.noreply.github.com>
 Homepage: https://github.com/wira-systems/releases
-Description: Wira POS, a point of sale for shops, restaurants and salons
+Description: $product, a point of sale for shops, restaurants and salons
  Sell in seconds, keep stock right, and close each day with the cash counted.
  Runs on the shop's own computer, works without the internet, and phones and
  laptops on the shop's Wi-Fi can join it.
 CONTROL
 
-deb="$out/wira-pos_${version}_amd64.deb"
+deb="$out/${package}_${version}_amd64.deb"
 dpkg-deb --root-owner-group --build "$root" "$deb" > /dev/null
 echo "Made $deb"
 echo "Depends: $depends"
