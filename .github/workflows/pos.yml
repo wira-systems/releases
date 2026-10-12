@@ -134,6 +134,7 @@ jobs:
           VERSION: ${{ needs.find.outputs.version }}
           BETA: ${{ needs.find.outputs.beta }}
           ONLY: ${{ needs.find.outputs.only }}
+          BRAND: ${{ needs.find.outputs.brand }}
           PRODUCT: ${{ needs.find.outputs.product }}
           SLUG: ${{ needs.find.outputs.slug }}
           PACKAGE: ${{ needs.find.outputs.package }}
@@ -141,6 +142,9 @@ jobs:
           set -euo pipefail
           # Each file's row, only for the files built.
           builds() { [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]; }
+          # Android and the Store are Wira POS's alone, so their rows are not Axent POS's to read:
+          # a row for a file the brand never built would name the other brand and point at nothing.
+          wira() { [ "$BRAND" = "wira" ]; }
           {
             if [ "$BETA" = "true" ]; then
               echo "A beta of $PRODUCT $VERSION, for trying out before its release."
@@ -152,8 +156,8 @@ jobs:
             echo "| --- | --- | --- |"
             ! builds deb || echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
             ! builds exe || echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
-            ! builds exe || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
-            [ "$ONLY" != "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
+            ! { builds exe && wira; } || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
+            ! { [ "$ONLY" = "apk" ] && wira; } || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
             ! builds dmg || echo "| \`${SLUG}-${VERSION}.dmg\` | macOS | Open it and drag $PRODUCT to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
             echo "Questions: $PRODUCT's About page, under Help, has how to reach us."
