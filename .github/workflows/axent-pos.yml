@@ -451,7 +451,7 @@ jobs:
         run: |
           set -euo pipefail
           command -v ninja > /dev/null || brew install ninja > /dev/null
-          cmake -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+          cmake -S axent-pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DWIRA_VERSION_NAME="$VERSION" -DWIRA_BRAND="$BRAND" \
             > configure.log 2>&1 || { grep -E -A8 "CMake Error" configure.log | head -60; exit 1; }
@@ -467,7 +467,7 @@ jobs:
         # Apple Silicon Mac needs before it runs anything, so macOS asks once before opening it.
         run: |
           set -euo pipefail
-          macdeployqt "build/$APP" -qmldir=pos/qml -always-overwrite > deploy.log 2>&1 \
+          macdeployqt "build/$APP" -qmldir=axent-pos/qml -always-overwrite > deploy.log 2>&1 \
             || { grep -iE "error|warning" deploy.log | head -30; exit 1; }
           codesign --force --deep --sign - "build/$APP"
           codesign --verify --deep --strict "build/$APP"
