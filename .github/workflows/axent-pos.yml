@@ -1,0 +1,607 @@
+# The installers for a tag of the private wira-systems/axent-pos (pos's A-010, A-247, A-255): run
+# by hand, they are built here, where Linux, Windows and macOS machines are free, and handed to
+# Axent Labs' own release for the tag, never published here. axent-pos is read with a read-only
+# deploy key, the secret AXENT_POS_DEPLOY_KEY, and only the finished files leave a build: no step
+# prints the source, and the logs, which are public, show only what went wrong.
+#
+# One brand, its own codebase (axent-pos's A-266). Until that amendment, Axent POS was the same
+# source as Wira POS built with `brand: axent` in `pos.yml`, and that is what `pos.yml` still does
+# for any tag of `pos`. Axent POS is developed in its own repository now, so its tags live where
+# `pos.yml` cannot see them, and this workflow is the one that builds them. There is no brand to
+# choose here: everything this builds is Axent POS.
+#
+# Three files, put on axent-labs/releases with AXENT_TOKEN, which is theirs to hand out: the .deb
+# for Ubuntu and Debian, the .exe for Windows and the .dmg for macOS. No .apk, Android being Wira
+# POS's alone, and no .msix until Axent Labs has a Store identity of its own.
+#
+# The files pass through a draft release here, which only the organization sees; once every one is
+# built they are put on Axent Labs' release and the draft is deleted, built or not.
+
+name: Axent POS
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "A tag of wira-systems/axent-pos to build, as v1.0.0"
+        required: false
+      try:
+        description: "Or a branch of axent-pos, only to try its builds: nothing is uploaded nor published"
+        required: false
+      only:
+        description: "The one build to run: deb, exe or dmg; empty for every one. With a tag, that file alone is built and put on Axent Labs' release in place of the one there"
+        required: false
+
+permissions:
+  contents: write
+
+# One release at a time.
+concurrency:
+  group: release-axent-pos
+  cancel-in-progress: false
+
+env:
+  SOURCE: git@github.com:wira-systems/axent-pos.git
+  # The draft a tag's files pass through here: axent-pos-v1.2.0-in-transit for its v1.2.0.
+  APP: axent-pos
+  TARGET: axent-labs/releases
+  QT_VERSION: "6.8.3"
+
+jobs:
+  find:
+    name: Find the tag to build
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      release: ${{ steps.pick.outputs.release }}
+      version: ${{ steps.pick.outputs.version }}
+      beta: ${{ steps.pick.outputs.beta }}
+      try: ${{ steps.pick.outputs.try }}
+      only: ${{ steps.pick.outputs.only }}
+      brand: ${{ steps.pick.outputs.brand }}
+      product: ${{ steps.pick.outputs.product }}
+      slug: ${{ steps.pick.outputs.slug }}
+      package: ${{ steps.pick.outputs.package }}
+      folder: ${{ steps.pick.outputs.folder }}
+      icon: ${{ steps.pick.outputs.icon }}
+    steps:
+      - name: Read axent-pos's tags
+        id: pick
+        env:
+          DEPLOY_KEY: ${{ secrets.AXENT_POS_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ASKED: ${{ inputs.tag }}
+          TRY: ${{ inputs.try }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -euo pipefail
+          # What this brand is called, wherever a file or a folder carries its name (pos's A-265).
+          # There is nothing to choose: this repository is Axent POS and builds nothing else.
+          { echo "brand=axent"; echo "product=Axent POS"; echo "slug=Axent-POS"
+            echo "package=axent-pos"; echo "folder=Axent Labs"; echo "icon=axent"; } >> "$GITHUB_OUTPUT"
+          # A try builds a branch of pos, under a version of its own, and uploads nothing.
+          if [ -n "$TRY" ]; then
+            echo "Trying the builds of axent-pos's $TRY, uploading nothing."
+            { echo "tag=$TRY"; echo "version=0.0.0-try.1"; echo "beta=true"; echo "try=true";
+              echo "only=${ONLY:-all}"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "try=false" >> "$GITHUB_OUTPUT"
+          # A tag may be built for one platform alone, by hand: deb, exe or dmg.
+          echo "only=${ONLY:-all}" >> "$GITHUB_OUTPUT"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/axent-pos
+          chmod 600 ~/.ssh/axent-pos
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/axent-pos -o IdentitiesOnly=yes"
+          tags=$(git ls-remote --tags --refs "$SOURCE" 'v*' | sed 's#.*refs/tags/##' | sort -V)
+          if [ -z "$ASKED" ]; then
+            echo "::error::Name a tag of wira-systems/axent-pos to build, as v1.0.0"
+            exit 1
+          fi
+          if ! grep -qx -- "$ASKED" <<<"$tags"; then
+            echo "::error::$ASKED is not a tag of wira-systems/axent-pos"
+            exit 1
+          fi
+          pick="$ASKED"
+          echo "Building $pick."
+          echo "tag=$pick" >> "$GITHUB_OUTPUT"
+          echo "release=${pick:+$APP-$pick-in-transit}" >> "$GITHUB_OUTPUT"
+          echo "version=${pick#v}" >> "$GITHUB_OUTPUT"
+          [[ "$pick" == *-* ]] && echo "beta=true" >> "$GITHUB_OUTPUT" || echo "beta=false" >> "$GITHUB_OUTPUT"
+
+  draft:
+    name: Its draft here, which only the organization sees
+    needs: find
+    if: needs.find.outputs.tag != '' && needs.find.outputs.try != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Its draft, with what each file is and how to install it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.find.outputs.tag }}
+          RELEASE: ${{ needs.find.outputs.release }}
+          VERSION: ${{ needs.find.outputs.version }}
+          BETA: ${{ needs.find.outputs.beta }}
+          ONLY: ${{ needs.find.outputs.only }}
+          BRAND: ${{ needs.find.outputs.brand }}
+          PRODUCT: ${{ needs.find.outputs.product }}
+          SLUG: ${{ needs.find.outputs.slug }}
+          PACKAGE: ${{ needs.find.outputs.package }}
+        run: |
+          set -euo pipefail
+          # Each file's row, only for the files built. Android and the Microsoft Store are Wira
+          # POS's alone and have no row here, because nothing in this workflow builds them.
+          builds() { [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]; }
+          {
+            if [ "$BETA" = "true" ]; then
+              echo "A beta of $PRODUCT $VERSION, for trying out before its release."
+            else
+              echo "$PRODUCT $VERSION."
+            fi
+            echo
+            echo "| File | For | To install |"
+            echo "| --- | --- | --- |"
+            ! builds deb || echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
+            ! builds exe || echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+            ! builds dmg || echo "| \`${SLUG}-${VERSION}.dmg\` | macOS | Open it and drag $PRODUCT to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
+            echo
+            echo "Questions: $PRODUCT's About page, under Help, has how to reach us."
+          } > notes.md
+          # A draft of its own each time, which only the organization sees; the notes go with the
+          # files to pos's release.
+          gh release delete "$RELEASE" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main --draft \
+            --title "$PRODUCT $VERSION, in transit" --notes-file notes.md
+
+  # Each build attaches its file to the draft: the .deb, the .exe and the .dmg, for a beta and a
+  # release alike (pos's A-086). Each builds the program alone, never the key tool beside it in
+  # the source, and refuses to attach anything of the Activator's.
+
+  deb:
+    name: The .deb, for Ubuntu and Debian
+    needs: [find, draft]
+    if: >-
+      always() && needs.find.outputs.tag != '' &&
+      (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
+      contains(fromJSON('["all", "deb"]'), needs.find.outputs.only)
+    # The oldest Ubuntu it is for: built there, it installs there and on every one since.
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: releases
+
+      - name: axent-pos, at the tag
+        env:
+          DEPLOY_KEY: ${{ secrets.AXENT_POS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          # The key and GitHub's host key in the runner's own temporary folder, on any runner.
+          key="$RUNNER_TEMP/axent-pos-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$SOURCE" axent-pos
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          # Qt Serial Port, for a receipt printer connected directly (A-003).
+          modules: qtserialport
+          cache: true
+
+      - name: The libraries Qt and the keychain need
+        run: >
+          sudo apt-get update -qq &&
+          sudo apt-get install -y -qq ninja-build ccache file libgl1-mesa-dev libegl1 libxkbcommon-dev
+          libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
+          libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-xkb1 libfontconfig1-dev libsecret-1-dev
+          libwayland-dev > /dev/null
+
+      - name: Build the program alone
+        # Into a log that stays on the runner: only what went wrong is shown, never the source.
+        run: |
+          set -euo pipefail
+          cd axent-pos
+          cmake --preset linux-release -DWIRA_VERSION_NAME="$VERSION" -DWIRA_BRAND="$BRAND" > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
+          cmake --build --preset linux-release --target wira > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
+          test -x build/linux-release/wira
+          if [ -e build/linux-release/ledgry-keys ]; then echo "::error::the key tool was built"; exit 1; fi
+          echo "Built wira $VERSION."
+
+      - name: The .deb
+        env:
+          QMAKE: ${{ env.QT_ROOT_DIR }}/bin/qmake
+          WIRA_VERSION: ${{ needs.find.outputs.version }}
+          WIRA_BRAND: ${{ needs.find.outputs.brand }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          releases/packaging/deb.sh axent-pos axent-pos/build/linux-release dist
+
+      - name: Nothing of the Activator in it
+        run: |
+          set -euo pipefail
+          if dpkg-deb -c dist/*.deb | grep -iE "ledgry-keys|activator"; then
+            echo "::error::the .deb carries something of the Activator's"
+            exit 1
+          fi
+          dpkg-deb -I dist/*.deb | sed -n '/Package:/,/Depends:/p'
+
+      - name: Installed and opened, on the oldest Ubuntu it is for and the newest
+        # As a shop would: installed with apt on a bare Ubuntu, Axent POS opened on the demo shop
+        # and left running a while, its data made where it keeps it. Its Wayland graphics plugin is
+        # carried, and the system's own libraries, the keychain's among them, still load beside
+        # what it carries: a newer Ubuntu is where carrying an older one of those breaks.
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/shop.sh" <<'SHOP'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq > /dev/null
+          apt-get install -y -qq /dist/*.deb xvfb xauth libsecret-1-0 python3 > /dev/null
+          . /etc/os-release
+          test -e /opt/$PACKAGE/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
+            || { echo "::error::no Wayland graphics plugin on $PRETTY_NAME"; exit 1; }
+          env LD_LIBRARY_PATH=/opt/$PACKAGE/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
+            || { echo "::error::the keychain's library does not load beside the .deb's on $PRETTY_NAME"; exit 1; }
+          xvfb-run -a wira --demo > /tmp/wira.log 2>&1 &
+          sleep 15
+          if ! pgrep -x wira > /dev/null; then
+            echo "::error::$PRODUCT stopped by itself on $PRETTY_NAME"
+            grep -vE "^$" /tmp/wira.log | tail -20
+            exit 1
+          fi
+          shop=$(find / -xdev -name ledgry-demo.sqlite 2> /dev/null | head -1)
+          [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $PRETTY_NAME"; exit 1; }
+          echo "Installed and opened on the demo shop on $PRETTY_NAME for 15 seconds."
+          SHOP
+          sed -i 's/^          //' "$RUNNER_TEMP/shop.sh"
+          for ubuntu in 22.04 24.04; do
+            docker run --rm -e PACKAGE -e PRODUCT -v "$PWD/dist:/dist:ro" \
+              -v "$RUNNER_TEMP/shop.sh:/shop.sh:ro" "ubuntu:$ubuntu" bash /shop.sh
+          done
+
+      - name: Kept a day, on a try
+        if: needs.find.outputs.try == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+          retention-days: 1
+
+      - name: Attached to the draft
+        if: needs.find.outputs.try != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE" dist/${PACKAGE}_${VERSION}_amd64.deb -R "$GITHUB_REPOSITORY" --clobber
+
+  exe:
+    name: The .exe, for Windows
+    needs: [find, draft]
+    if: >-
+      always() && needs.find.outputs.tag != '' &&
+      (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
+      contains(fromJSON('["all", "exe"]'), needs.find.outputs.only)
+    runs-on: windows-2022
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
+    steps:
+      - name: axent-pos, at the tag
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.AXENT_POS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          # The key and GitHub's host key in the runner's own temporary folder, on any runner.
+          key="$RUNNER_TEMP/axent-pos-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$SOURCE" axent-pos
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          # Qt Serial Port, for a receipt printer connected directly (A-003).
+          modules: qtserialport
+          cache: true
+
+      - name: Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build the program alone, and install it with its Qt
+        # Into logs that stay on the runner: only what went wrong is shown, never the source.
+        shell: pwsh
+        run: |
+          Set-Location axent-pos
+          cmake --preset windows-release "-DWIRA_VERSION_NAME=$env:VERSION" "-DWIRA_BRAND=$env:BRAND" *> ..\configure.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
+          cmake --build --preset windows-release --target wira *> ..\build.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
+          if (Test-Path build\windows-release\ledgry-keys.exe) { Write-Error "the key tool was built"; exit 1 }
+          # Qt's deploy step takes only an absolute prefix.
+          cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
+          Set-Location ..
+          # Nothing ships without Qt beside it, and nothing of the Activator's ships at all.
+          foreach ($needed in "bin\wira.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
+            if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
+          }
+          $activator = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match "ledgry-keys|activator" }
+          if ($activator) { $activator | ForEach-Object { $_.FullName }; Write-Error "the install carries something of the Activator's"; exit 1 }
+          Write-Output "Built and installed wira $env:VERSION."
+
+      - name: The .exe
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" "axent-pos\packaging\axent\axent.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Installed, opened and taken out again
+        # As a shop would: installed for everyone, Axent POS opened on the demo shop, left running
+        # a while, its data made where it keeps it, then uninstalled.
+        shell: pwsh
+        run: |
+          $dir = "C:\$env:SLUG"
+          $setup = "dist\$env:SLUG-$env:VERSION-setup.exe"
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/ALLUSERS", "/DIR=$dir" -Wait
+          if (-not (Test-Path "$dir\bin\wira.exe")) { Write-Error "the installer put no wira.exe in $dir"; exit 1 }
+          $app = Start-Process "$dir\bin\wira.exe" -ArgumentList "--demo" -PassThru
+          Start-Sleep -Seconds 15
+          if ($app.HasExited) { Write-Error "$env:PRODUCT stopped by itself, with $($app.ExitCode)"; exit 1 }
+          # Found wherever Axent POS keeps it under its data folder, as on Linux and macOS: since pos's
+          # bug bounty the demo shop is in a folder of its own, demo\ledgry-demo.sqlite.
+          $shop = Get-ChildItem (Join-Path $env:APPDATA $env:FOLDER) -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $shop) { Write-Error "$env:PRODUCT made no demo shop under $env:APPDATA\$env:FOLDER"; exit 1 }
+          Write-Output "Its demo shop at $($shop.FullName)."
+          Stop-Process -Id $app.Id -Force
+          Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          Write-Output "Installed, opened on the demo shop for 15 seconds, and uninstalled."
+
+      - name: Attached to the draft
+        if: needs.find.outputs.try != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE" dist/${SLUG}-${VERSION}-setup.exe -R "$GITHUB_REPOSITORY" --clobber
+
+  dmg:
+    name: The .dmg, for macOS
+    needs: [find, draft]
+    # A beta's and a release's alike (pos's A-086, in place of A-010's main only).
+    if: >-
+      always() && needs.find.outputs.tag != '' &&
+      (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
+      contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)
+    # An Apple Silicon Mac, building one app for Apple Silicon and Intel Macs alike.
+    runs-on: macos-14
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
+      APP: ${{ needs.find.outputs.product }}.app
+    steps:
+      - name: axent-pos, at the tag
+        env:
+          DEPLOY_KEY: ${{ secrets.AXENT_POS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          # The key and GitHub's host key in the runner's own temporary folder, on any runner.
+          key="$RUNNER_TEMP/axent-pos-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$SOURCE" axent-pos
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          arch: clang_64
+          # Qt Serial Port, for a receipt printer connected directly (A-003).
+          modules: qtserialport
+          cache: true
+
+      - name: Build the app alone, for Apple Silicon and Intel
+        # Into logs that stay on the runner: only what went wrong is shown, never the source.
+        run: |
+          set -euo pipefail
+          command -v ninja > /dev/null || brew install ninja > /dev/null
+          cmake -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+            -DWIRA_VERSION_NAME="$VERSION" -DWIRA_BRAND="$BRAND" \
+            > configure.log 2>&1 || { grep -E -A8 "CMake Error" configure.log | head -60; exit 1; }
+          cmake --build build --target wira > build.log 2>&1 || {
+            grep -E ": (fatal )?error:|ld: " build.log | head -30
+            exit 1
+          }
+          [ ! -e build/ledgry-keys ] || { echo "::error::the key tool was built"; exit 1; }
+          echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/$PRODUCT")."
+
+      - name: Its Qt inside it, and signed for this Mac alone
+        # Unsigned by Wira Systems until it has an Apple developer account (A-010): signed ad hoc, as an
+        # Apple Silicon Mac needs before it runs anything, so macOS asks once before opening it.
+        run: |
+          set -euo pipefail
+          macdeployqt "build/$APP" -qmldir=pos/qml -always-overwrite > deploy.log 2>&1 \
+            || { grep -iE "error|warning" deploy.log | head -30; exit 1; }
+          codesign --force --deep --sign - "build/$APP"
+          codesign --verify --deep --strict "build/$APP"
+          # Nothing ships without Qt inside it, and nothing of the Activator's ships at all.
+          for needed in Contents/Frameworks/QtCore.framework Contents/Frameworks/QtQuick.framework \
+                        Contents/PlugIns/platforms/libqcocoa.dylib Contents/PlugIns/sqldrivers/libqsqlite.dylib \
+                        Contents/Resources/qt.conf "Contents/Resources/$ICON.icns"; do
+            [ -e "build/$APP/$needed" ] || { echo "::error::the app has no $needed"; exit 1; }
+          done
+          if find "build/$APP" | grep -iE "ledgry-keys|activator"; then
+            echo "::error::the app carries something of the Activator's"
+            exit 1
+          fi
+
+      - name: The .dmg
+        # The app beside a link to Applications, to drag it onto.
+        run: |
+          set -euo pipefail
+          mkdir -p image dist
+          cp -R "build/$APP" image/
+          ln -s /Applications image/Applications
+          hdiutil create -quiet -volname "$PRODUCT" -srcfolder image -fs HFS+ -format UDZO \
+            -ov "dist/$SLUG-$VERSION.dmg"
+          ls -lh dist | tail -n +2 | awk '{print $NF "  " $5}'
+
+      - name: Installed, opened and taken out again
+        # As a shop would: dragged from the .dmg to Applications, opened on the demo shop, left
+        # running a while, its data made where it keeps it; then the Intel half the same way.
+        run: |
+          set -euo pipefail
+          mount=$(hdiutil attach -nobrowse -readonly "dist/$SLUG-$VERSION.dmg" | awk -F'\t' '/Volumes/ {print $NF}')
+          cp -R "$mount/$APP" /Applications/
+          hdiutil detach -quiet "$mount"
+          program="/Applications/$APP/Contents/MacOS/$PRODUCT"
+          for arch in arm64 x86_64; do
+            if [ "$arch" = x86_64 ] && ! arch -x86_64 /usr/bin/true 2> /dev/null; then
+              echo "No Rosetta on this Mac: the Intel half is built, not opened."
+              continue
+            fi
+            rm -rf "$HOME/Library/Application Support/$FOLDER"
+            arch -"$arch" "$program" --demo > "$RUNNER_TEMP/app-$arch.log" 2>&1 &
+            app=$!
+            sleep 15
+            if ! kill -0 "$app" 2> /dev/null; then
+              echo "::error::$PRODUCT stopped by itself on $arch"
+              grep -E "qrc:/|Fatal|fatal|Abort" "$RUNNER_TEMP/app-$arch.log" | head -30
+              exit 1
+            fi
+            [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
+            shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
+            [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $arch"; exit 1; }
+            qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
+            [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
+            kill "$app"
+            wait "$app" 2> /dev/null || true
+            echo "Opened on the demo shop on $arch for 15 seconds, its shop at ${shop#$HOME/}."
+          done
+          rm -rf "/Applications/$APP"
+
+      - name: What the Mac showed, and the .dmg, kept a day, on a try
+        if: always() && needs.find.outputs.try == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: |
+            ${{ runner.temp }}/mac.png
+            dist/*.dmg
+          retention-days: 1
+          if-no-files-found: ignore
+
+      - name: Attached to the draft
+        if: needs.find.outputs.try != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE" "dist/${SLUG}-${VERSION}.dmg" -R "$GITHUB_REPOSITORY" --clobber
+
+  handover:
+    name: Handed to Axent Labs' release
+    needs: [find, draft, deb, exe, dmg]
+    # Once every file asked for is in the draft.
+    if: >-
+      always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' &&
+      (needs.deb.result == 'success' || (needs.deb.result == 'skipped' && !contains(fromJSON('["all", "deb"]'), needs.find.outputs.only))) &&
+      (needs.exe.result == 'success' || (needs.exe.result == 'skipped' && !contains(fromJSON('["all", "exe"]'), needs.find.outputs.only))) &&
+      (needs.dmg.result == 'success' || (needs.dmg.result == 'skipped' && !contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)))
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BETA: ${{ needs.find.outputs.beta }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      SLUG: ${{ needs.find.outputs.slug }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+      FOLDER: ${{ needs.find.outputs.folder }}
+      ICON: ${{ needs.find.outputs.icon }}
+    steps:
+      - name: The files, and their notes, from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE" -R "$GITHUB_REPOSITORY" -D files
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          ls files
+
+      - name: On the brand's release for the tag
+        env:
+          AXENT_TOKEN: ${{ secrets.AXENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          # The files go to axent-labs/releases, which is theirs to hand out. A tag of axent-pos is
+          # no tag of theirs, so a release is made there by name rather than verified against one
+          # (pos's A-260, A-263); the notes are the draft's, which say what each file is and how to
+          # install it.
+          repo="$TARGET"
+          export GH_TOKEN=${AXENT_TOKEN:?a token for axent-labs/releases, contents read and write}
+          if gh release view "$TAG" -R "$repo" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$repo" --clobber
+          else
+            flags=(--title "$PRODUCT $VERSION" --notes-file notes.md)
+            [ "$BETA" = "true" ] && flags+=(--prerelease)
+            gh release create "$TAG" files/* -R "$repo" "${flags[@]}"
+          fi
+          echo "On $repo's release $TAG."
+
+  cleanup:
+    name: The draft deleted
+    needs: [find, handover]
+    if: always() && needs.find.outputs.release != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Nothing of axent-pos's left here
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ needs.find.outputs.release }}" -R "$GITHUB_REPOSITORY" --yes || true
