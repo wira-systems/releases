@@ -267,8 +267,13 @@ jobs:
           cmake --build --preset linux-release --target wira-portal wira-portal-seed wira-portal-ops \
             > ../build.log 2>&1 \
             || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
+          # **Found, not guessed at.** The node links at the top of the build directory and the
+          # two tools into `tools/seed` and `tools/ops`, so looking for all three at the top
+          # failed on the second one however well the build had gone. `cmake --install` is what
+          # decides where they come from for the package; this only says they exist.
           for program in wira-portal wira-portal-seed wira-portal-ops; do
-            test -x "build/linux-release/$program" || { echo "::error::no $program was built"; exit 1; }
+            find build/linux-release -type f -name "$program" -perm -u+x | grep -q . \
+              || { echo "::error::no $program was built"; exit 1; }
           done
           echo "Built $PRODUCT on the web $VERSION."
 
