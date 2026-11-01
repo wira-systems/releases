@@ -212,11 +212,17 @@ jobs:
           # The submodule is declared over HTTPS, which no deploy key can answer. Rewritten to the
           # alias carrying pos's key, for this clone only.
           git -c advice.detachedHead=false clone -q --branch "$TAG" "$PORTAL" wira-portal
-          git -C wira-portal config url."git@pos.github.com:wira-systems/pos.git".insteadOf \
-            "https://github.com/wira-systems/pos.git"
+          # **The submodule's own URL, set between init and update.** `insteadOf` was tried here
+          # and does not reach a submodule's clone: the run failed asking for a username on
+          # https://github.com, which is the HTTPS URL `.gitmodules` declares going out
+          # unrewritten. `submodule init` copies that URL into `.git/config`, and setting it
+          # there afterwards is what the clone actually reads.
+          git -C wira-portal submodule init third_party/pos
+          git -C wira-portal config submodule.third_party/pos.url \
+            "git@pos.github.com:wira-systems/pos.git"
           # The submodule **at the commit pos-web pins**, which is the whole point of pinning it:
           # the books every figure comes from are the ones this tag was built and tested against.
-          git -C wira-portal submodule update --init --depth 1 third_party/pos
+          git -C wira-portal submodule update --depth 1 third_party/pos
           rm -f ~/.ssh/wira-portal ~/.ssh/pos
 
       - name: The pos it was built against, for the notes
