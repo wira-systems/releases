@@ -316,8 +316,15 @@ jobs:
           apt-get update -qq > /dev/null
           apt-get install -y -qq /dist/*.deb > /dev/null
           . /etc/os-release
-          test -e /usr/lib/wira-portal/plugins/sqldrivers/libqsqlpsql.so \
-            || { echo "::error::no PostgreSQL driver on $PRETTY_NAME"; exit 1; }
+          # **SQLite, not PostgreSQL.** The control plane became one SQLite file per node with
+          # A-035 and the Postgres driver stopped being carried; this went on asking for it, so
+          # a package that was exactly right failed the test that checks it.
+          test -e /usr/lib/wira-portal/plugins/sqldrivers/libqsqlite.so \
+            || { echo "::error::no SQLite driver on $PRETTY_NAME, so it can open nothing"; exit 1; }
+          # Every TLS handshake the node makes, which is the letter a forgotten password is sent
+          # by: `QSslSocket` carries no TLS of its own and fails every handshake without this.
+          test -e /usr/lib/wira-portal/plugins/tls/libqopensslbackend.so \
+            || { echo "::error::no TLS backend on $PRETTY_NAME, so no letter could be sent"; exit 1; }
           test -e /usr/lib/wira-portal/plugins/platforms/libqoffscreen.so \
             || { echo "::error::no platform plugin on $PRETTY_NAME, so a PDF would stop it"; exit 1; }
           # With no environment at all, as systemd starts it: it must find its own Qt by its rpath.
