@@ -1,0 +1,406 @@
+# The package for a tag of the private wira-systems/wira-pos (section 8, A-027, A-028): run by hand,
+# it is built here, where Linux machines are free, and handed to the brand's own release for the
+# tag, never published here. pos-web and the pos it pins are both read with read-only deploy keys,
+# and only the finished file leaves a build: no step prints the source, and the logs, which are
+# public, show only what went wrong.
+#
+# **This file belongs in `wira-systems/releases/.github/workflows/wira-portal.yml`**, beside `pos.yml`.
+# It is kept here as well because it is this repository's package it builds, this repository's
+# `packaging/brand.sh` it reads, and a workflow that lives only in another repository is a workflow
+# nobody changing this one ever sees. The copy there is the one that runs; the README says so.
+#
+# **One build, not five.** pos ships a .deb, an .exe, an .msix, an .apk and a .dmg, because a till
+# is a machine somebody sits at. A node is a server: it is installed on a Linux machine behind a
+# reverse proxy and reached with a browser, so the .deb is the whole of it.
+#
+# **Two repositories, two keys.** pos-web is private and the pos it pins is private, and a deploy
+# key is good for one repository only. Both are `git@github.com`, so which key is used cannot be
+# left to the agent -- with two keys in it, ssh authenticates with whichever the server takes
+# first and the clone then fails on authorization, which reads like a bad key and is not. Each gets
+# a host alias of its own instead, and the submodule's HTTPS URL is rewritten to its alias.
+#
+# One source, two brands (pos's A-260, A-265). The `brand` input chooses which a run builds, and
+# the names come from `packaging/brand.sh` **at the tag being built** rather than from a copy kept
+# here: `pos.yml` keeps its own table in its `find` job, which is the same names written twice.
+#
+#   wira    Wira POS, Wira Systems' own: wira-portal_<version>_amd64.deb, put on the portal's own release
+#           for the tag with PORTAL_TOKEN (contents, read and write, on wira-systems/wira-pos alone)
+#   axent   Axent POS, the same node under Axent Labs' name and mark, which they distribute:
+#           axent-portal_<version>_amd64.deb, put on axent-labs/releases with AXENT_TOKEN
+#
+# Run it once for each brand of a tag. The file passes through a draft release here, which only the
+# organization sees; once it is built it is put on the brand's release and the draft is deleted,
+# built or not.
+
+name: Wira POS on the web
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "A tag of wira-systems/wira-pos to build, as v0.2.0"
+        required: false
+      try:
+        description: "Or a branch of pos-web, only to try its build: nothing is uploaded nor published"
+        required: false
+      brand:
+        description: "Which brand to build: wira for Wira POS, axent for Axent Labs' Axent POS; empty for wira"
+        required: false
+        type: choice
+        options: ["", "wira", "axent"]
+
+permissions:
+  contents: write
+
+# One release at a time.
+concurrency:
+  group: release-wira-portal
+  cancel-in-progress: false
+
+env:
+  # Host aliases, not github.com: each carries the key for its own repository. The `find` and `deb`
+  # jobs both write the matching ~/.ssh/config.
+  PORTAL: git@portal.github.com:wira-systems/wira-pos.git
+  # The draft a tag's file passes through here: wira-portal-v0.2.0-in-transit for the portal's v0.2.0.
+  APP: wira-portal
+  QT_VERSION: "6.8.3"
+
+jobs:
+  find:
+    name: Find the tag to build, and what this brand is called
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      release: ${{ steps.pick.outputs.release }}
+      version: ${{ steps.pick.outputs.version }}
+      beta: ${{ steps.pick.outputs.beta }}
+      try: ${{ steps.pick.outputs.try }}
+      # Straight from `packaging/brand.sh` at the tag, and not restated here.
+      brand: ${{ steps.pick.outputs.brand }}
+      product: ${{ steps.pick.outputs.product }}
+      package: ${{ steps.pick.outputs.package }}
+      vendor: ${{ steps.pick.outputs.vendor }}
+      releases: ${{ steps.pick.outputs.releases }}
+      token: ${{ steps.pick.outputs.token }}
+    steps:
+      - name: Read the portal's tags, and its brand table at the one asked for
+        id: pick
+        env:
+          PORTAL_DEPLOY_KEY: ${{ secrets.PORTAL_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ASKED: ${{ inputs.tag }}
+          TRY: ${{ inputs.try }}
+          BRAND: ${{ inputs.brand }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$PORTAL_DEPLOY_KEY" > ~/.ssh/wira-portal
+          chmod 600 ~/.ssh/wira-portal
+          ssh-keyscan -t ed25519 github.com > ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'SSH'
+          Host portal.github.com
+            HostName github.com
+            IdentityFile ~/.ssh/wira-portal
+            IdentitiesOnly yes
+          SSH
+          sed -i 's/^          //' ~/.ssh/config
+
+          # A try builds a branch, under a version of its own, and uploads nothing.
+          if [ -n "$TRY" ]; then
+            echo "Trying the build of the portal's $TRY, uploading nothing."
+            { echo "tag=$TRY"; echo "version=0.0.0-try.1"; echo "beta=true"; echo "try=true"; } >> "$GITHUB_OUTPUT"
+            want=$TRY
+          else
+            echo "try=false" >> "$GITHUB_OUTPUT"
+            tags=$(git ls-remote --tags --refs "$PORTAL" 'v*' | sed 's#.*refs/tags/##' | sort -V)
+            if [ -z "$ASKED" ]; then
+              echo "::error::Name a tag of wira-systems/wira-pos to build, as v0.2.0"
+              exit 1
+            fi
+            if ! grep -qx -- "$ASKED" <<<"$tags"; then
+              echo "::error::$ASKED is not a tag of wira-systems/wira-pos"
+              exit 1
+            fi
+            echo "Building $ASKED."
+            { echo "tag=$ASKED"; echo "release=$APP-$ASKED-in-transit"; echo "version=${ASKED#v}"; } >> "$GITHUB_OUTPUT"
+            case "$ASKED" in *-beta*|*-rc*) echo "beta=true" ;; *) echo "beta=false" ;; esac >> "$GITHUB_OUTPUT"
+            want=$ASKED
+          fi
+
+          # The brand's names, read out of the tag being built. Only `packaging/` is taken, and it
+          # is thrown away in the same step: this job decides names and builds nothing.
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$want" \
+            --filter=blob:none --sparse "$PORTAL" names
+          git -C names sparse-checkout set packaging
+          names/packaging/brand.sh "${BRAND:-wira}" >> "$GITHUB_OUTPUT"
+          rm -rf names ~/.ssh/wira-portal
+
+  draft:
+    name: Its draft here, which only the organization sees
+    needs: find
+    if: needs.find.outputs.tag != '' && needs.find.outputs.try != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Its draft, saying what the file is and how to install it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ needs.find.outputs.release }}
+          VERSION: ${{ needs.find.outputs.version }}
+          BETA: ${{ needs.find.outputs.beta }}
+          PRODUCT: ${{ needs.find.outputs.product }}
+          PACKAGE: ${{ needs.find.outputs.package }}
+        run: |
+          set -euo pipefail
+          {
+            if [ "$BETA" = "true" ]; then
+              echo "A beta of $PRODUCT on the web $VERSION, for trying out before its release."
+            else
+              echo "$PRODUCT on the web $VERSION."
+            fi
+            echo
+            echo "| File | For | To install |"
+            echo "| --- | --- | --- |"
+            echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu 22.04 and later, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
+            echo
+            echo "A node listens on the loopback only. Put a reverse proxy in front of it to hold"
+            echo "the certificate, make the control plane, put its password in"
+            echo "\`/etc/wira-portal/wira-portal.conf\`, then \`wira-portal-ops migrate && systemctl enable --now wira-portal\`."
+          } > notes.md
+          gh release delete "$RELEASE" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" --target main --draft \
+            --title "$PRODUCT on the web $VERSION, in transit" --notes-file notes.md
+
+  deb:
+    name: The .deb, for Ubuntu and Debian
+    needs: [find, draft]
+    if: >-
+      always() && needs.find.outputs.tag != '' &&
+      (needs.draft.result == 'success' || needs.find.outputs.try == 'true')
+    # The oldest Ubuntu it is for: built there, it installs there and on every one since.
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+      PACKAGE: ${{ needs.find.outputs.package }}
+    steps:
+      - name: pos-web at the tag, with the pos it pins
+        env:
+          PORTAL_DEPLOY_KEY: ${{ secrets.PORTAL_DEPLOY_KEY }}
+          POS_DEPLOY_KEY: ${{ secrets.POS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          # Both keys in the runner's own temporary folder, each behind a host alias of its own.
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$PORTAL_DEPLOY_KEY" > ~/.ssh/wira-portal
+          printf '%s\n' "$POS_DEPLOY_KEY" > ~/.ssh/pos
+          chmod 600 ~/.ssh/wira-portal ~/.ssh/pos
+          ssh-keyscan -t ed25519 github.com > ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'SSH'
+          Host portal.github.com
+            HostName github.com
+            IdentityFile ~/.ssh/wira-portal
+            IdentitiesOnly yes
+          Host pos.github.com
+            HostName github.com
+            IdentityFile ~/.ssh/pos
+            IdentitiesOnly yes
+          SSH
+          sed -i 's/^          //' ~/.ssh/config
+          # The submodule is declared over HTTPS, which no deploy key can answer. Rewritten to the
+          # alias carrying pos's key, for this clone only.
+          git -c advice.detachedHead=false clone -q --branch "$TAG" "$PORTAL" wira-portal
+          git -C wira-portal config url."git@pos.github.com:wira-systems/pos.git".insteadOf \
+            "https://github.com/wira-systems/pos.git"
+          # The submodule **at the commit pos-web pins**, which is the whole point of pinning it:
+          # the books every figure comes from are the ones this tag was built and tested against.
+          git -C wira-portal submodule update --init --depth 1 third_party/pos
+          rm -f ~/.ssh/wira-portal ~/.ssh/pos
+
+      - name: The pos it was built against, for the notes
+        id: pinned
+        run: |
+          set -euo pipefail
+          # The tag pos's own history gives that commit, which is what the release notes record:
+          # "built against pos v0.13.0-beta.2" is the one fact a shop's figures can be traced by.
+          #
+          # The tags have to be fetched for that. The submodule is cloned a commit deep, and a
+          # shallow clone carries no tags at all, so `git describe` found none and the notes would
+          # have recorded a bare SHA -- true, and no use to anybody reading them.
+          cd wira-portal/third_party/pos
+          git fetch -q --tags --depth 1 origin 2>/dev/null || true
+          commit=$(git rev-parse HEAD)
+          tag=$(git describe --tags --exact-match "$commit" 2>/dev/null || echo "")
+          { echo "commit=$commit"; echo "tag=${tag:-$commit}"; } >> "$GITHUB_OUTPUT"
+          echo "Built against pos ${tag:-$commit}."
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: linux_gcc_64
+          cache: true
+
+      - name: The libraries the build needs
+        run: >
+          sudo apt-get update -qq &&
+          sudo apt-get install -y -qq ninja-build ccache file libpq-dev libsecret-1-dev
+          libgl1-mesa-dev libegl1 > /dev/null
+
+      - name: Build the node
+        # Into a log that stays on the runner: only what went wrong is shown, never the source.
+        run: |
+          set -euo pipefail
+          cd wira-portal
+          cmake --preset linux-release -DPORTAL_BRAND="$BRAND" > ../configure.log 2>&1 \
+            || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
+          # The three programs the package carries, and not the forty test binaries beside them:
+          # a release build of the lot is minutes of a runner spent on what is never shipped.
+          cmake --build --preset linux-release --target wira-portal wira-portal-seed wira-portal-ops \
+            > ../build.log 2>&1 \
+            || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
+          for program in wira-portal wira-portal-seed wira-portal-ops; do
+            test -x "build/linux-release/$program" || { echo "::error::no $program was built"; exit 1; }
+          done
+          echo "Built $PRODUCT on the web $VERSION."
+
+      - name: The .deb
+        env:
+          QMAKE: ${{ env.QT_ROOT_DIR }}/bin/qmake
+          PORTAL_VERSION: ${{ needs.find.outputs.version }}
+          PORTAL_BRAND: ${{ needs.find.outputs.brand }}
+        run: |
+          set -euo pipefail
+          mkdir dist
+          wira-portal/packaging/deb.sh wira-portal/build/linux-release dist
+
+      - name: The brand it says it is, and nothing of the source in it
+        run: |
+          set -euo pipefail
+          # The package the brand asked for, and not the other brand's: a run handing Axent Labs a
+          # package called `wira-portal` would be handing them Wira Systems' own.
+          test -f "dist/${PACKAGE}_${VERSION}_amd64.deb" \
+            || { echo "::error::no dist/${PACKAGE}_${VERSION}_amd64.deb"; ls dist; exit 1; }
+          named=$(dpkg-deb -f "dist/${PACKAGE}_${VERSION}_amd64.deb" Package)
+          [ "$named" = "$PACKAGE" ] || { echo "::error::the .deb calls itself $named, not $PACKAGE"; exit 1; }
+          # No source, no history and no key (A-027): a brand is handed a program, not a repository.
+          if dpkg-deb -c "dist/${PACKAGE}_${VERSION}_amd64.deb" \
+               | grep -E "/(src|tests|third_party|\.git)/|\.cpp$|\.h$|/\.git$|id_[a-z]+$|\.pem$"; then
+            echo "::error::the .deb carries source, history or a key"
+            exit 1
+          fi
+          dpkg-deb -I "dist/${PACKAGE}_${VERSION}_amd64.deb" | sed -n '/Package:/,/Description:/p'
+
+      - name: Installed and started, on the oldest Ubuntu it is for and the newest
+        # As a shop would: installed with apt on a bare Ubuntu. It is not started by the package --
+        # it has no control plane to reach yet -- so what is checked is that it installs, that its
+        # own Qt is what it loads, and that the program runs and answers for its version.
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/node.sh" <<'NODE'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq > /dev/null
+          apt-get install -y -qq /dist/*.deb > /dev/null
+          . /etc/os-release
+          test -e /usr/lib/wira-portal/plugins/sqldrivers/libqsqlpsql.so \
+            || { echo "::error::no PostgreSQL driver on $PRETTY_NAME"; exit 1; }
+          test -e /usr/lib/wira-portal/plugins/platforms/libqoffscreen.so \
+            || { echo "::error::no platform plugin on $PRETTY_NAME, so a PDF would stop it"; exit 1; }
+          # With no environment at all, as systemd starts it: it must find its own Qt by its rpath.
+          env -i /usr/bin/wira-portal --version > /tmp/said 2>&1 \
+            || { echo "::error::wira-portal would not run on $PRETTY_NAME"; cat /tmp/said; exit 1; }
+          grep -q . /tmp/said || { echo "::error::wira-portal said nothing for --version"; exit 1; }
+          echo "Installed on $PRETTY_NAME, and it runs: $(cat /tmp/said)"
+          NODE
+          sed -i 's/^          //' "$RUNNER_TEMP/node.sh"
+          for ubuntu in 22.04 24.04; do
+            docker run --rm -v "$PWD/dist:/dist:ro" \
+              -v "$RUNNER_TEMP/node.sh:/node.sh:ro" "ubuntu:$ubuntu" bash /node.sh
+          done
+
+      - name: Kept a day, on a try
+        if: needs.find.outputs.try == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/*.deb
+          retention-days: 1
+
+      - name: Attached to the draft, with the pos it was built against
+        if: needs.find.outputs.try != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.pinned.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE" "dist/${PACKAGE}_${VERSION}_amd64.deb" \
+            -R "$GITHUB_REPOSITORY" --clobber
+          # Recorded on the draft, so it travels with the file to the brand's release.
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          printf '\nBuilt against pos %s.\n' "$PINNED" >> notes.md
+          gh release edit "$RELEASE" -R "$GITHUB_REPOSITORY" --notes-file notes.md
+
+  handover:
+    name: Handed to the brand's release
+    needs: [find, draft, deb]
+    if: >-
+      always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' &&
+      needs.deb.result == 'success'
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BETA: ${{ needs.find.outputs.beta }}
+      BRAND: ${{ needs.find.outputs.brand }}
+      PRODUCT: ${{ needs.find.outputs.product }}
+    steps:
+      - name: The file, and its notes, from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE" -R "$GITHUB_REPOSITORY" -D files
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          ls files
+
+      - name: On the brand's release for the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Which repository and which secret are the brand's own, from `brand.sh`.
+          WHERE: ${{ needs.find.outputs.releases }}
+          WHICH: ${{ needs.find.outputs.token }}
+          PORTAL_TOKEN: ${{ secrets.PORTAL_TOKEN }}
+          AXENT_TOKEN: ${{ secrets.AXENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Wira Systems' own file goes to the portal's release for the tag, verified against the tag
+          # that is there. Axent Labs' goes to a repository of theirs, which is theirs to hand out:
+          # a tag of pos-web is no tag of theirs, so a release is made there by name rather than
+          # verified against one (pos's A-260, A-263).
+          token=${!WHICH:-}
+          [ -n "$token" ] || { echo "::error::no $WHICH secret, which is $BRAND's token for $WHERE"; exit 1; }
+          export GH_TOKEN=$token
+          if [ "$BRAND" = "wira" ]; then verify=(--verify-tag); else verify=(); fi
+          if gh release view "$TAG" -R "$WHERE" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$WHERE" --clobber
+          else
+            flags=("${verify[@]}" --title "$PRODUCT on the web $VERSION" --notes-file notes.md)
+            [ "$BETA" = "true" ] && flags+=(--prerelease)
+            gh release create "$TAG" files/* -R "$WHERE" "${flags[@]}"
+          fi
+          echo "On $WHERE's release $TAG."
+
+  cleanup:
+    name: The draft deleted
+    needs: [find, handover]
+    if: always() && needs.find.outputs.release != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Nothing of the portal's left here
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ needs.find.outputs.release }}" -R "$GITHUB_REPOSITORY" --yes || true
