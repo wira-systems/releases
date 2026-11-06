@@ -260,7 +260,7 @@ jobs:
         run: |
           set -euo pipefail
           cd wira-portal
-          cmake --preset linux-release -DPORTAL_BRAND="$BRAND" > ../configure.log 2>&1 \
+          cmake --preset linux-release -DPORTAL_VERSION_NAME="$VERSION" -DPORTAL_BRAND="$BRAND" > ../configure.log 2>&1 \
             || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
           # The three programs the package carries, and not the forty test binaries beside them:
           # a release build of the lot is minutes of a runner spent on what is never shipped.
