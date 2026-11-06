@@ -621,7 +621,7 @@ jobs:
       (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
       contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)
     # An Apple Silicon Mac, building one app for Apple Silicon and Intel Macs alike.
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       TAG: ${{ needs.find.outputs.tag }}
       RELEASE: ${{ needs.find.outputs.release }}
