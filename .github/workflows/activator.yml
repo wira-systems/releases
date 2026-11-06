@@ -211,7 +211,7 @@ jobs:
   dmg:
     name: The .dmg, for macOS
     needs: find
-    runs-on: macos-14
+    runs-on: macos-15
     env:
       TAG: ${{ needs.find.outputs.tag }}
       VERSION: ${{ needs.find.outputs.version }}
