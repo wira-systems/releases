@@ -4,18 +4,10 @@
 # POS_DEPLOY_KEY, and only the finished files leave a build: no step prints the source, and the
 # logs, which are public, show only what went wrong.
 #
-# One source, two brands (pos's A-260, A-265). The `brand` input chooses which a run builds:
-#
-#   wira    Wira POS, Wira Systems' own: the .deb, .exe, .msix, .apk and .dmg, put on pos's own
-#           release for the tag with POS_TOKEN (contents, read and write, on wira-systems/pos alone)
-#   axent   Axent POS, the same program under Axent Labs' name and mark, which they distribute:
-#           the .deb, .exe and .dmg, put on axent-labs/releases with AXENT_TOKEN. No .apk, Android
-#           being Wira POS's alone, and no .msix until Axent Labs has a Store identity of its own
-#
-# Run it once for each brand of a tag. The files pass through a draft release here, which only the
-# organization sees; once every one is built they are put on the brand's release and the draft is
-# deleted, built or not. Shops get Wira POS from the app stores, not from here (pos's A-255). The
-# README says how a release is made, step by step.
+# The files pass through a draft release here, which only the organization sees; once every one is
+# built they are put on pos's own release and the draft is deleted, built or not. Shops get Wira POS
+# from the app stores, not from here (pos's A-255). The README says how a release is made, step by
+# step.
 
 name: Wira POS
 
@@ -31,11 +23,6 @@ on:
       only:
         description: "The one build to run: deb, exe, apk or dmg; empty for every one. With a tag, that file alone is built and put on pos's release in place of the one there"
         required: false
-      brand:
-        description: "Which brand to build: wira for Wira POS, axent for Axent Labs' Axent POS (pos's A-260); empty for wira"
-        required: false
-        type: choice
-        options: ["", "wira", "axent"]
 
 permissions:
   contents: write
@@ -77,18 +64,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ASKED: ${{ inputs.tag }}
           TRY: ${{ inputs.try }}
-          BRAND: ${{ inputs.brand }}
           ONLY: ${{ inputs.only }}
         run: |
           set -euo pipefail
-          # What this brand is called, wherever a file or a folder carries its name (pos's A-265).
-          if [ "${BRAND:-wira}" = "axent" ]; then
-            { echo "brand=axent"; echo "product=Axent POS"; echo "slug=Axent-POS"
-              echo "package=axent-pos"; echo "folder=Axent Labs"; echo "icon=axent"; } >> "$GITHUB_OUTPUT"
-          else
-            { echo "brand=wira"; echo "product=Wira POS"; echo "slug=Wira-POS"
-              echo "package=wira-pos"; echo "folder=Wira"; echo "icon=wira"; } >> "$GITHUB_OUTPUT"
-          fi
+          { echo "brand=wira"; echo "product=Wira POS"; echo "slug=Wira-POS"
+            echo "package=wira-pos"; echo "folder=Wira"; echo "icon=wira"; } >> "$GITHUB_OUTPUT"
           # A try builds a branch of pos, under a version of its own, and uploads nothing.
           if [ -n "$TRY" ]; then
             echo "Trying the builds of pos's $TRY, uploading nothing."
@@ -142,9 +122,6 @@ jobs:
           set -euo pipefail
           # Each file's row, only for the files built.
           builds() { [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]; }
-          # Android and the Store are Wira POS's alone, so their rows are not Axent POS's to read:
-          # a row for a file the brand never built would name the other brand and point at nothing.
-          wira() { [ "$BRAND" = "wira" ]; }
           {
             if [ "$BETA" = "true" ]; then
               echo "A beta of $PRODUCT $VERSION, for trying out before its release."
@@ -156,8 +133,8 @@ jobs:
             echo "| --- | --- | --- |"
             ! builds deb || echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
             ! builds exe || echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
-            ! { builds exe && wira; } || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
-            ! { [ "$ONLY" = "apk" ] && wira; } || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
+            ! builds exe || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
+            ! [ "$ONLY" = "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
             ! builds dmg || echo "| \`${SLUG}-${VERSION}.dmg\` | macOS | Open it and drag $PRODUCT to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
             echo "Questions: $PRODUCT's About page, under Help, has how to reach us."
@@ -235,7 +212,6 @@ jobs:
           cmake --preset linux-release -DWIRA_VERSION_NAME="$VERSION" -DWIRA_BRAND="$BRAND" > ../configure.log 2>&1 || { grep -E "CMake Error|error:" ../configure.log | head -20; exit 1; }
           cmake --build --preset linux-release --target wira > ../build.log 2>&1 || { grep -E ": (fatal )?error:" ../build.log | head -30; exit 1; }
           test -x build/linux-release/wira
-          if [ -e build/linux-release/ledgry-keys ]; then echo "::error::the key tool was built"; exit 1; fi
           echo "Built wira $VERSION."
 
       - name: The .deb
@@ -251,7 +227,7 @@ jobs:
       - name: Nothing of the Activator in it
         run: |
           set -euo pipefail
-          if dpkg-deb -c dist/*.deb | grep -iE "ledgry-keys|activator"; then
+          if dpkg-deb -c dist/*.deb | grep -iE "activator"; then
             echo "::error::the .deb carries something of the Activator's"
             exit 1
           fi
@@ -281,7 +257,7 @@ jobs:
             grep -vE "^$" /tmp/wira.log | tail -20
             exit 1
           fi
-          shop=$(find / -xdev -name ledgry-demo.sqlite 2> /dev/null | head -1)
+          shop=$(find / -xdev -name wira-demo.sqlite 2> /dev/null | head -1)
           [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $PRETTY_NAME"; exit 1; }
           echo "Installed and opened on the demo shop on $PRETTY_NAME for 15 seconds."
           SHOP
@@ -363,7 +339,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
           cmake --build --preset windows-release --target wira *> ..\build.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
-          if (Test-Path build\windows-release\ledgry-keys.exe) { Write-Error "the key tool was built"; exit 1 }
           # Qt's deploy step takes only an absolute prefix.
           cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
@@ -372,7 +347,7 @@ jobs:
           foreach ($needed in "bin\wira.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
             if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
           }
-          $activator = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match "ledgry-keys|activator" }
+          $activator = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match "activator" }
           if ($activator) { $activator | ForEach-Object { $_.FullName }; Write-Error "the install carries something of the Activator's"; exit 1 }
           Write-Output "Built and installed wira $env:VERSION."
 
@@ -381,7 +356,7 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" $(if ($env:BRAND -eq "axent") { "pos\packaging\axent\axent.iss" } else { "pos\packaging\wira.iss" })
+          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" "pos\packaging\wira.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem dist | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
 
@@ -398,8 +373,8 @@ jobs:
           Start-Sleep -Seconds 15
           if ($app.HasExited) { Write-Error "$env:PRODUCT stopped by itself, with $($app.ExitCode)"; exit 1 }
           # Found wherever Wira POS keeps it under its data folder, as on Linux and macOS: since pos's
-          # bug bounty the demo shop is in a folder of its own, demo\ledgry-demo.sqlite.
-          $shop = Get-ChildItem (Join-Path $env:APPDATA $env:FOLDER) -Recurse -Filter "ledgry-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
+          # bug bounty the demo shop is in a folder of its own, demo\wira-demo.sqlite.
+          $shop = Get-ChildItem (Join-Path $env:APPDATA $env:FOLDER) -Recurse -Filter "wira-demo.sqlite" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $shop) { Write-Error "$env:PRODUCT made no demo shop under $env:APPDATA\$env:FOLDER"; exit 1 }
           Write-Output "Its demo shop at $($shop.FullName)."
           Stop-Process -Id $app.Id -Force
@@ -419,10 +394,6 @@ jobs:
           TRY: ${{ needs.find.outputs.try }}
         run: |
           # A tag from before pos had its MSIX manifest (its A-256) makes no .msix, and fails nothing.
-          if ($env:BRAND -eq "axent") {
-            Write-Output "::warning::No .msix for Axent POS: it has no Store identity of its own yet (pos's P25-M04)."
-            exit 0
-          }
           if (-not (Test-Path pos\packaging\msix\AppxManifest.xml)) {
             Write-Output "::warning::No .msix: pos at $env:TAG has no packaging/msix, which came with v0.10.2."
             exit 0
@@ -466,7 +437,7 @@ jobs:
     if: >-
       always() && needs.find.outputs.tag != '' &&
       (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
-      needs.find.outputs.only == 'apk' && needs.find.outputs.brand == 'wira'
+      needs.find.outputs.only == 'apk'
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ needs.find.outputs.tag }}
@@ -556,7 +527,7 @@ jobs:
             echo "::error::the .apk is not signed with Wira Systems' key (signed by $signer)"
             exit 1
           fi
-          if unzip -l "$apk" | grep -iE "ledgry-keys|activator"; then
+          if unzip -l "$apk" | grep -iE "activator"; then
             echo "::error::the .apk carries something of the Activator's"
             exit 1
           fi
@@ -672,7 +643,6 @@ jobs:
             grep -E ": (fatal )?error:|ld: " build.log | head -30
             exit 1
           }
-          [ ! -e build/ledgry-keys ] || { echo "::error::the key tool was built"; exit 1; }
           echo "Built $APP for $(lipo -archs "build/$APP/Contents/MacOS/$PRODUCT")."
 
       - name: Its Qt inside it, and signed for this Mac alone
@@ -690,7 +660,7 @@ jobs:
                         Contents/Resources/qt.conf "Contents/Resources/$ICON.icns"; do
             [ -e "build/$APP/$needed" ] || { echo "::error::the app has no $needed"; exit 1; }
           done
-          if find "build/$APP" | grep -iE "ledgry-keys|activator"; then
+          if find "build/$APP" | grep -iE "activator"; then
             echo "::error::the app carries something of the Activator's"
             exit 1
           fi
@@ -730,7 +700,7 @@ jobs:
               exit 1
             fi
             [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
-            shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'ledgry-demo.sqlite' 2> /dev/null | head -1)
+            shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'wira-demo.sqlite' 2> /dev/null | head -1)
             [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $arch"; exit 1; }
             qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
             [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
@@ -792,33 +762,19 @@ jobs:
       - name: On the brand's release for the tag
         env:
           GH_TOKEN: ${{ secrets.POS_TOKEN }}
-          AXENT_TOKEN: ${{ secrets.AXENT_TOKEN }}
         run: |
           set -euo pipefail
           # Wira POS's files go to pos's own release for the tag, made by its release script with
           # its changelog; the files join it, each replacing one there already (A-255).
-          # Axent Labs' go to axent-labs/releases instead, which is theirs to hand out: a tag of
-          # pos is no tag of theirs, so a release is made there by name rather than verified
-          # against one (pos's A-260, A-263).
-          if [ "$BRAND" = "axent" ]; then
-            repo=axent-labs/releases
-            product="Axent POS"
-            GH_TOKEN=${AXENT_TOKEN:?a token for axent-labs/releases, contents read and write}
-            verify=()
-          else
-            repo="$TARGET"
-            product="Wira POS"
-            verify=(--verify-tag)
-          fi
           export GH_TOKEN
-          if gh release view "$TAG" -R "$repo" > /dev/null 2>&1; then
-            gh release upload "$TAG" files/* -R "$repo" --clobber
+          if gh release view "$TAG" -R "$TARGET" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$TARGET" --clobber
           else
-            flags=("${verify[@]}" --title "$product $VERSION" --notes-file notes.md)
+            flags=(--verify-tag --title "Wira POS $VERSION" --notes-file notes.md)
             [ "$BETA" = "true" ] && flags+=(--prerelease)
-            gh release create "$TAG" files/* -R "$repo" "${flags[@]}"
+            gh release create "$TAG" files/* -R "$TARGET" "${flags[@]}"
           fi
-          echo "On $repo's release $TAG."
+          echo "On $TARGET's release $TAG."
 
   cleanup:
     name: The draft deleted

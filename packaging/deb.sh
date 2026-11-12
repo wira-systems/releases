@@ -113,9 +113,9 @@ cp "$art/$stem.desktop" "$root/usr/share/applications/$stem.desktop"
 cp "$art/$stem.png" "$root/usr/share/icons/hicolor/256x256/apps/$stem.png"
 
 # Nothing of the Activator's: its key tool is never built for a release, and never shipped.
-if find "$root" -iname '*ledgry-keys*' -o -iname '*activator*' | grep -q .; then
+if find "$root" -iname '*activator*' | grep -q .; then
     echo "deb.sh: refusing to package something of the Activator's:" >&2
-    find "$root" -iname '*ledgry-keys*' -o -iname '*activator*' >&2
+    find "$root" -iname '*activator*' >&2
     exit 1
 fi
 

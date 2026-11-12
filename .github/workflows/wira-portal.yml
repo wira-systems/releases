@@ -19,18 +19,8 @@
 # first and the clone then fails on authorization, which reads like a bad key and is not. Each gets
 # a host alias of its own instead, and the submodule's HTTPS URL is rewritten to its alias.
 #
-# One source, two brands (pos's A-260, A-265). The `brand` input chooses which a run builds, and
-# the names come from `packaging/brand.sh` **at the tag being built** rather than from a copy kept
-# here: `pos.yml` keeps its own table in its `find` job, which is the same names written twice.
-#
-#   wira    Wira POS, Wira Systems' own: wira-portal_<version>_amd64.deb, put on the portal's own release
-#           for the tag with PORTAL_TOKEN (contents, read and write, on wira-systems/wira-pos alone)
-#   axent   Axent POS, the same node under Axent Labs' name and mark, which they distribute:
-#           axent-portal_<version>_amd64.deb, put on axent-labs/releases with AXENT_TOKEN
-#
-# Run it once for each brand of a tag. The file passes through a draft release here, which only the
-# organization sees; once it is built it is put on the brand's release and the draft is deleted,
-# built or not.
+# The file passes through a draft release here, which only the organization sees; once it is built
+# it is put on the portal's release and the draft is deleted, built or not.
 
 name: Wira POS on the web
 
@@ -43,11 +33,6 @@ on:
       try:
         description: "Or a branch of pos-web, only to try its build: nothing is uploaded nor published"
         required: false
-      brand:
-        description: "Which brand to build: wira for Wira POS, axent for Axent Labs' Axent POS; empty for wira"
-        required: false
-        type: choice
-        options: ["", "wira", "axent"]
 
 permissions:
   contents: write
@@ -90,7 +75,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ASKED: ${{ inputs.tag }}
           TRY: ${{ inputs.try }}
-          BRAND: ${{ inputs.brand }}
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
@@ -132,7 +116,7 @@ jobs:
           git -c advice.detachedHead=false clone -q --depth 1 --branch "$want" \
             --filter=blob:none --sparse "$PORTAL" names
           git -C names sparse-checkout set packaging
-          names/packaging/brand.sh "${BRAND:-wira}" >> "$GITHUB_OUTPUT"
+          names/packaging/brand.sh wira >> "$GITHUB_OUTPUT"
           rm -rf names ~/.ssh/wira-portal
 
   draft:
@@ -290,8 +274,7 @@ jobs:
       - name: The brand it says it is, and nothing of the source in it
         run: |
           set -euo pipefail
-          # The package the brand asked for, and not the other brand's: a run handing Axent Labs a
-          # package called `wira-portal` would be handing them Wira Systems' own.
+          # The package as declared: wira-portal_<version>_amd64.deb.
           test -f "dist/${PACKAGE}_${VERSION}_amd64.deb" \
             || { echo "::error::no dist/${PACKAGE}_${VERSION}_amd64.deb"; ls dist; exit 1; }
           named=$(dpkg-deb -f "dist/${PACKAGE}_${VERSION}_amd64.deb" Package)
@@ -387,26 +370,16 @@ jobs:
 
       - name: On the brand's release for the tag
         env:
-          GH_TOKEN: ${{ github.token }}
-          # Which repository and which secret are the brand's own, from `brand.sh`.
-          WHERE: ${{ needs.find.outputs.releases }}
-          WHICH: ${{ needs.find.outputs.token }}
           PORTAL_TOKEN: ${{ secrets.PORTAL_TOKEN }}
-          AXENT_TOKEN: ${{ secrets.AXENT_TOKEN }}
         run: |
           set -euo pipefail
           # Wira Systems' own file goes to the portal's release for the tag, verified against the tag
-          # that is there. Axent Labs' goes to a repository of theirs, which is theirs to hand out:
-          # a tag of pos-web is no tag of theirs, so a release is made there by name rather than
-          # verified against one (pos's A-260, A-263).
-          token=${!WHICH:-}
-          [ -n "$token" ] || { echo "::error::no $WHICH secret, which is $BRAND's token for $WHERE"; exit 1; }
-          export GH_TOKEN=$token
-          if [ "$BRAND" = "wira" ]; then verify=(--verify-tag); else verify=(); fi
+          # that is there.
+          export GH_TOKEN="${PORTAL_TOKEN:?a token for wira-systems/wira-pos, contents read and write}"
           if gh release view "$TAG" -R "$WHERE" > /dev/null 2>&1; then
             gh release upload "$TAG" files/* -R "$WHERE" --clobber
           else
-            flags=("${verify[@]}" --title "$PRODUCT on the web $VERSION" --notes-file notes.md)
+            flags=(--verify-tag --title "$PRODUCT on the web $VERSION" --notes-file notes.md)
             [ "$BETA" = "true" ] && flags+=(--prerelease)
             gh release create "$TAG" files/* -R "$WHERE" "${flags[@]}"
           fi
