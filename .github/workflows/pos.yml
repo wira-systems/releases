@@ -429,15 +429,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$RELEASE" dist/${SLUG}-${VERSION}-setup.exe $(ls dist/*.msix 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber
 
-  # Wira POS is for desktops for now (A-020): the .apk is built only when asked for by name, and
-  # those already published stay.
+  # The Android .apk, built for ARM64 and signed with Wira Systems' release key.
   apk:
     name: The .apk, for Android
     needs: [find, draft]
     if: >-
       always() && needs.find.outputs.tag != '' &&
       (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
-      needs.find.outputs.only == 'apk'
+      contains(fromJSON('["all", "apk"]'), needs.find.outputs.only)
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ needs.find.outputs.tag }}
@@ -735,7 +734,7 @@ jobs:
       always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' &&
       (needs.deb.result == 'success' || (needs.deb.result == 'skipped' && !contains(fromJSON('["all", "deb"]'), needs.find.outputs.only))) &&
       (needs.exe.result == 'success' || (needs.exe.result == 'skipped' && !contains(fromJSON('["all", "exe"]'), needs.find.outputs.only))) &&
-      (needs.apk.result == 'success' || (needs.apk.result == 'skipped' && needs.find.outputs.only != 'apk')) &&
+      (needs.apk.result == 'success' || (needs.apk.result == 'skipped' && !contains(fromJSON('["all", "apk"]'), needs.find.outputs.only))) &&
       (needs.dmg.result == 'success' || (needs.dmg.result == 'skipped' && !contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)))
     runs-on: ubuntu-24.04
     env:

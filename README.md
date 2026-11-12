@@ -21,9 +21,10 @@ Both workflows run **only by hand**, for a tag of the app that already exists. N
 3. **Build:** each platform builds the app at the tag and attaches its file to the draft:
    - Linux: the `.deb`, on Ubuntu 22.04;
    - Windows: the setup `.exe`, with Inno Setup;
-   - macOS: the `.dmg`, one app for Apple Silicon and Intel, signed ad hoc.
+   - macOS: the `.dmg`, one app for Apple Silicon and Intel, signed ad hoc;
+   - Android: the `.apk`, built for ARM64 and signed with Wira Systems' release key.
 
-   Wira POS also has an Android `.apk`, built only when asked for (`only: apk`), which needs the Android signing secrets below. Each build is checked: Wira POS installs and opens on each system and must carry nothing of the Activator; the Activator must carry no private key, register or backup. Logs are public, so no step prints the source: builds write to logs kept on the machine, and only what went wrong is shown.
+   Each build is checked: Wira POS installs and opens on each system and must carry nothing of the Activator; the Activator must carry no private key, register or backup. Logs are public, so no step prints the source: builds write to logs kept on the machine, and only what went wrong is shown.
 4. **Handover:** the files, and the draft's notes for each file, are put on the app's **own release for the tag** in its private repository, using a token that can write to that repository alone. For Wira POS that release is normally made already by pos's release script, with its changelog; the files join it, and a file of the same name is replaced. Where there is none, one is made.
 5. **Cleanup:** the draft here is deleted, whether the build got that far or not. Nothing of either app stays in this repository.
 
