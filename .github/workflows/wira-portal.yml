@@ -358,6 +358,7 @@ jobs:
       BETA: ${{ needs.find.outputs.beta }}
       BRAND: ${{ needs.find.outputs.brand }}
       PRODUCT: ${{ needs.find.outputs.product }}
+      WHERE: ${{ needs.find.outputs.releases }}
     steps:
       - name: The file, and its notes, from the draft
         env:
