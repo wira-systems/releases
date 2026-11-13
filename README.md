@@ -21,8 +21,7 @@ Both workflows run **only by hand**, for a tag of the app that already exists. N
 3. **Build:** each platform builds the app at the tag and attaches its file to the draft:
    - Linux: the `.deb`, on Ubuntu 22.04;
    - Windows: the setup `.exe`, with Inno Setup;
-   - macOS: the `.dmg`, one app for Apple Silicon and Intel, signed ad hoc;
-   - Android: the `.apk`, built for ARM64 and signed with Wira Systems' release key.
+   - macOS: the `.dmg`, one app for Apple Silicon and Intel, signed ad hoc.
 
    Each build is checked: Wira POS installs and opens on each system and must carry nothing of the Activator; the Activator must carry no private key, register or backup. Logs are public, so no step prints the source: builds write to logs kept on the machine, and only what went wrong is shown.
 4. **Handover:** the files, and the draft's notes for each file, are put on the app's **own release for the tag** in its private repository, using a token that can write to that repository alone. For Wira POS that release is normally made already by pos's release script, with its changelog; the files join it, and a file of the same name is replaced. Where there is none, one is made.
@@ -43,7 +42,7 @@ Both workflows run **only by hand**, for a tag of the app that already exists. N
 | 7 | — | The `.deb`, `.exe` and `.dmg` appear on `wira-systems/pos`'s release `vX.Y.0`. |
 | 8 | **you**, with the agent's help | Send the new version to each store (see below). |
 
-A file that failed can be built again alone: `gh workflow run pos.yml -R wira-systems/releases -f tag=vX.Y.0 -f only=exe` (`deb`, `exe`, `dmg` or `apk`); it replaces the one on pos's release. To try a branch's builds without handing anything over: `-f try=feat/some-branch`.
+A file that failed can be built again alone: `gh workflow run pos.yml -R wira-systems/releases -f tag=vX.Y.0 -f only=exe` (`deb`, `exe`, or `dmg`); it replaces the one on pos's release. To try a branch's builds without handing anything over: `-f try=feat/some-branch`.
 
 ### Activator
 
@@ -70,7 +69,6 @@ Set up once, and kept. If a build fails at **Handover**, check the token first: 
 | Secret `POS_TOKEN` | this repository's secrets | **you** | A fine-grained token: owner `wira-systems`, only `wira-systems/pos`, permission **Contents: Read and write** (Metadata, read-only, comes with it). Lets the handover put files on pos's release. |
 | Secret `PORTAL_TOKEN` | this repository's secrets | **you** | The same, for `wira-systems/wira-pos` alone. |
 | Secret `ACTIVATOR_TOKEN` | this repository's secrets | **you** | The same, for `wira-systems/activator` alone. |
-| Secrets `ANDROID_KEYSTORE_BASE`, `ANDROID_KEYSTORE_PASSWORD` | this repository's secrets | not set yet | Sign Wira POS's `.apk`, only when one is asked for. |
 
 A token is made on GitHub: your picture → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**, with the owner, repository and permission above. Save it without it passing through anyone else, by running this and pasting it when asked:
 
