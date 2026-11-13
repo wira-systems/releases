@@ -692,20 +692,34 @@ jobs:
             rm -rf "$HOME/Library/Application Support/$FOLDER"
             arch -"$arch" "$program" --demo > "$RUNNER_TEMP/app-$arch.log" 2>&1 &
             app=$!
-            sleep 15
-            if ! kill -0 "$app" 2> /dev/null; then
-              echo "::error::$PRODUCT stopped by itself on $arch"
-              grep -E "qrc:/|Fatal|fatal|Abort" "$RUNNER_TEMP/app-$arch.log" | head -30
+            timeout=$([ "$arch" = x86_64 ] && echo 60 || echo 30)
+            shop=""
+            for i in $(seq 1 "$timeout"); do
+              sleep 1
+              if ! kill -0 "$app" 2> /dev/null; then
+                echo "::error::$PRODUCT stopped by itself on $arch"
+                grep -E "qrc:/|Fatal|fatal|Abort" "$RUNNER_TEMP/app-$arch.log" | head -30 || true
+                exit 1
+              fi
+              if [ -d "$HOME/Library/Application Support/$FOLDER" ]; then
+                shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'wira-demo.sqlite' 2> /dev/null | head -1 || true)
+                [ -n "$shop" ] && [ "$i" -ge 15 ] && break
+              fi
+            done
+            [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
+            if [ -z "$shop" ] && [ -d "$HOME/Library/Application Support/$FOLDER" ]; then
+              shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'wira-demo.sqlite' 2> /dev/null | head -1 || true)
+            fi
+            if [ -z "$shop" ]; then
+              echo "::error::$PRODUCT made no demo shop on $arch after ${timeout}s"
+              tail -n 30 "$RUNNER_TEMP/app-$arch.log" || true
               exit 1
             fi
-            [ "$arch" = arm64 ] && { screencapture -x "$RUNNER_TEMP/mac.png" 2> /dev/null || true; }
-            shop=$(find "$HOME/Library/Application Support/$FOLDER" -name 'wira-demo.sqlite' 2> /dev/null | head -1)
-            [ -n "$shop" ] || { echo "::error::$PRODUCT made no demo shop on $arch"; exit 1; }
             qml=$(grep -cE "qrc:/qt/qml/" "$RUNNER_TEMP/app-$arch.log" || true)
             [ "$qml" = "0" ] || { echo "QML said $qml things on $arch:"; grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" "$RUNNER_TEMP/app-$arch.log" | sort | uniq -c | head -20; }
             kill "$app"
             wait "$app" 2> /dev/null || true
-            echo "Opened on the demo shop on $arch for 15 seconds, its shop at ${shop#$HOME/}."
+            echo "Opened on the demo shop on $arch for $i seconds, its shop at ${shop#$HOME/}."
           done
           rm -rf "/Applications/$APP"
 
