@@ -21,7 +21,7 @@ on:
         description: "Or a branch of pos, only to try its builds: nothing is uploaded nor published"
         required: false
       only:
-        description: "The one build to run: deb, exe, apk or dmg; empty for every one. With a tag, that file alone is built and put on pos's release in place of the one there"
+        description: "The one build to run: deb, exe, or dmg; empty for every one. With a tag, that file alone is built and put on pos's release in place of the one there"
         required: false
 
 permissions:
@@ -77,7 +77,7 @@ jobs:
             exit 0
           fi
           echo "try=false" >> "$GITHUB_OUTPUT"
-          # A tag may be built for one platform alone, by hand: deb, exe, apk or dmg.
+          # A tag may be built for one platform alone, by hand: deb, exe, or dmg.
           echo "only=${ONLY:-all}" >> "$GITHUB_OUTPUT"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/pos
@@ -134,7 +134,6 @@ jobs:
             ! builds deb || echo "| \`${PACKAGE}_${VERSION}_amd64.deb\` | Ubuntu, Debian | \`sudo apt install ./${PACKAGE}_${VERSION}_amd64.deb\` |"
             ! builds exe || echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
             ! builds exe || echo "| \`${SLUG}-${VERSION}.msix\` | The Microsoft Store | Not installed by hand: uploaded in Partner Center to a new submission of Wira POS, where the Store signs it. Made once its identity is set. |"
-            ! [ "$ONLY" = "apk" ] || echo "| \`wira-pos-${VERSION}.apk\` | Android phones and tablets, joining a shop | Open it on the phone, allowing installs from this source when asked. |"
             ! builds dmg || echo "| \`${SLUG}-${VERSION}.dmg\` | macOS | Open it and drag $PRODUCT to Applications. The first time, macOS says it cannot check the app: choose **Done**, then in System Settings, Privacy & Security, choose **Open Anyway**. |"
             echo
             echo "Questions: $PRODUCT's About page, under Help, has how to reach us."
@@ -146,8 +145,8 @@ jobs:
             --title "$PRODUCT $VERSION, in transit" --notes-file notes.md
 
   # Each build attaches its file to the draft: the .deb, the .exe and the .dmg, for a beta and a
-  # release alike (pos's A-086); the .apk only when asked for by name. Each builds the program
-  # alone, never the key tool beside it in pos, and refuses to attach anything of the Activator's.
+  # release alike (pos's A-086). Each builds the program alone, never the key tool beside it in
+  # pos, and refuses to attach anything of the Activator's.
 
   deb:
     name: The .deb, for Ubuntu and Debian
@@ -429,159 +428,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$RELEASE" dist/${SLUG}-${VERSION}-setup.exe $(ls dist/*.msix 2>/dev/null) -R "$GITHUB_REPOSITORY" --clobber
 
-  # The Android .apk, built for ARM64 and signed with Wira Systems' release key.
-  apk:
-    name: The .apk, for Android
-    needs: [find, draft]
-    if: >-
-      always() && needs.find.outputs.tag != '' &&
-      (needs.draft.result == 'success' || needs.find.outputs.try == 'true') &&
-      contains(fromJSON('["all", "apk"]'), needs.find.outputs.only)
-    runs-on: ubuntu-24.04
-    env:
-      TAG: ${{ needs.find.outputs.tag }}
-      RELEASE: ${{ needs.find.outputs.release }}
-      VERSION: ${{ needs.find.outputs.version }}
-      # The NDK and Android platform Qt 6.8 is built for.
-      NDK: "26.1.10909125"
-      PLATFORM: "android-34"
-      BUILD_TOOLS: "34.0.0"
-      # Wira Systems' own signing key, whose certificate every .apk must carry (the private android-signing repository; not yet a secret here);
-      # its store and password are the secrets ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD.
-      CERTIFICATE: "0829c97f0de56ad51b732a074a5951526457c37efe1155028db4bb61dc78b54d"
-    steps:
-      - name: pos, at the tag
-        env:
-          DEPLOY_KEY: ${{ secrets.POS_DEPLOY_KEY }}
-        run: |
-          set -euo pipefail
-          # The key and GitHub's host key in the runner's own temporary folder, on any runner.
-          key="$RUNNER_TEMP/pos-key"
-          printf '%s\n' "$DEPLOY_KEY" > "$key"
-          chmod 600 "$key"
-          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
-          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
-            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$POS" pos
-          rm "$key"
-
-      - name: Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Qt ${{ env.QT_VERSION }} for Android, and for this machine beside it
-        # aqtinstall itself: the Qt action cannot find Qt 6.8's Android kit, which aqt installs.
-        run: |
-          set -euo pipefail
-          pip install -q aqtinstall
-          aqt install-qt linux android "$QT_VERSION" android_arm64_v8a --autodesktop -O "$RUNNER_TEMP/Qt" > "$RUNNER_TEMP/aqt.log" 2>&1 \
-            || { tail -20 "$RUNNER_TEMP/aqt.log"; exit 1; }
-          echo "QT_ROOT_DIR=$RUNNER_TEMP/Qt/$QT_VERSION/android_arm64_v8a" >> "$GITHUB_ENV"
-
-      - name: The NDK and Android platform
-        run: |
-          set -euo pipefail
-          sdkmanager="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          # Its licences accepted first: yes ends with a broken pipe once they are, which is no failure.
-          (yes 2>/dev/null || true) | "$sdkmanager" --licenses > /dev/null
-          "$sdkmanager" --install "ndk;$NDK" "platforms;$PLATFORM" "build-tools;$BUILD_TOOLS" > /dev/null
-          sudo apt-get install -y -qq ninja-build > /dev/null
-
-      - name: Build the app alone, signed
-        # Into a log that stays on the runner: only what went wrong is shown, never the source.
-        env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          # Not secret, and as a secret it would hide the alias in every log line; the alias is the key's own, kept from before (A-251).
-          QT_ANDROID_KEYSTORE_ALIAS: axent
-          QT_ANDROID_KEYSTORE_STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          QT_ANDROID_KEYSTORE_KEY_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        run: |
-          set -euo pipefail
-          export QT_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/wira.p12"
-          base64 -d <<<"$KEYSTORE" > "$QT_ANDROID_KEYSTORE_PATH"
-          trap 'rm -f "$QT_ANDROID_KEYSTORE_PATH"' EXIT
-          "$QT_ROOT_DIR/bin/qt-cmake" -S pos -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DQT_HOST_PATH="$(dirname "$QT_ROOT_DIR")/gcc_64" \
-            -DANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" -DANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK" \
-            -DQT_ANDROID_SIGN_APK=ON -DWIRA_VERSION_NAME="$VERSION" -DBUILD_TESTING=OFF \
-            > configure.log 2>&1 || { grep -E -A8 "CMake Error" configure.log | head -60; exit 1; }
-          cmake --build build --target apk > build.log 2>&1 || {
-            grep -E ": (fatal )?error:|FAILURE|What went wrong|> [A-Z]" build.log | head -30
-            exit 1
-          }
-          apk=$(find build -name '*release-signed.apk' | head -1)
-          [ -n "$apk" ] || { echo "::error::no signed .apk was made"; find build -name '*.apk'; exit 1; }
-          mkdir dist
-          cp "$apk" "dist/wira-pos-$VERSION.apk"
-          echo "Built wira-pos-$VERSION.apk."
-
-      - name: Signed by Wira Systems, and nothing of the Activator in it
-        run: |
-          set -euo pipefail
-          apk="dist/wira-pos-$VERSION.apk"
-          signer=$("$ANDROID_SDK_ROOT/build-tools/$BUILD_TOOLS/apksigner" verify --print-certs "$apk" \
-            | sed -n 's/.*certificate SHA-256 digest: //p' | head -1)
-          if [ "$signer" != "$CERTIFICATE" ]; then
-            echo "::error::the .apk is not signed with Wira Systems' key (signed by $signer)"
-            exit 1
-          fi
-          if unzip -l "$apk" | grep -iE "activator"; then
-            echo "::error::the .apk carries something of the Activator's"
-            exit 1
-          fi
-          ls -l "$apk" | awk '{ printf "%s  %.1f MB\n", $9, $5 / 1048576 }'
-          echo "Signed by Wira Systems' key."
-
-      - name: A phone to try it on
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules > /dev/null
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          # What the phone does, as one script: the emulator's runner takes its script a line at a time.
-          cat > "$RUNNER_TEMP/phone.sh" <<'PHONE'
-          set -euo pipefail
-          adb install -r "dist/wira-pos-$VERSION.apk" > /dev/null
-          adb logcat -c
-          adb shell am start -W -n com.wirasystems.pos/org.qtproject.qt.android.bindings.QtActivity > /dev/null
-          sleep 25
-          adb exec-out screencap -p > "$RUNNER_TEMP/phone.png" || true
-          qml=$(adb logcat -d | grep -cE "qrc:/qt/qml/" || true)
-          if [ "$qml" != "0" ]; then echo "QML said $qml things:"; adb logcat -d | grep -oE "qrc:/qt/qml/[^ ]+:[0-9]+(:[0-9]+)?: [A-Za-z ]{0,60}" | sort | uniq -c | head -20; fi
-          if [ -z "$(adb shell pidof com.wirasystems.pos | tr -d '\r')" ]; then
-            echo "::error::Wira POS stopped by itself on the phone"
-            adb logcat -d | grep -E "FATAL|AndroidRuntime|DEBUG  |Abort" | head -30
-            exit 1
-          fi
-          echo "Installed and opened on Android $(adb shell getprop ro.build.version.release | tr -d '\r'); still running after 25 seconds."
-          PHONE
-          sed -i 's/^          //' "$RUNNER_TEMP/phone.sh"
-
-      - name: Installed on an Android phone, and opened
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: bash "$RUNNER_TEMP/phone.sh"
-
-      - name: What the phone showed, kept a day, on a try
-        if: always() && needs.find.outputs.try == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: phone
-          path: ${{ runner.temp }}/phone.png
-          retention-days: 1
-          if-no-files-found: ignore
-
-      - name: Attached to the draft
-        if: needs.find.outputs.try != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE" "dist/wira-pos-${VERSION}.apk" -R "$GITHUB_REPOSITORY" --clobber
-
   dmg:
     name: The .dmg, for macOS
     needs: [find, draft]
@@ -742,13 +588,12 @@ jobs:
 
   handover:
     name: Handed to the brand's release
-    needs: [find, draft, deb, exe, apk, dmg]
+    needs: [find, draft, deb, exe, dmg]
     # Once every file asked for is in the draft.
     if: >-
       always() && needs.find.outputs.tag != '' && needs.find.outputs.try != 'true' &&
       (needs.deb.result == 'success' || (needs.deb.result == 'skipped' && !contains(fromJSON('["all", "deb"]'), needs.find.outputs.only))) &&
       (needs.exe.result == 'success' || (needs.exe.result == 'skipped' && !contains(fromJSON('["all", "exe"]'), needs.find.outputs.only))) &&
-      (needs.apk.result == 'success' || (needs.apk.result == 'skipped' && !contains(fromJSON('["all", "apk"]'), needs.find.outputs.only))) &&
       (needs.dmg.result == 'success' || (needs.dmg.result == 'skipped' && !contains(fromJSON('["all", "dmg"]'), needs.find.outputs.only)))
     runs-on: ubuntu-24.04
     env:
