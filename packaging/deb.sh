@@ -96,6 +96,12 @@ mkdir -p "$root/opt/$package/plugins/wayland-graphics-integration-client"
 cp "$qt/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so" \
    "$root/opt/$package/plugins/wayland-graphics-integration-client/"
 
+# Image format plugins: ensure WebP is bundled so users can drop and view WebP product images.
+if [ -f "$qt/plugins/imageformats/libqwebp.so" ]; then
+    mkdir -p "$root/opt/$package/plugins/imageformats"
+    cp "$qt/plugins/imageformats/libqwebp.so" "$root/opt/$package/plugins/imageformats/"
+fi
+
 # Only Qt's own libraries are carried. linuxdeploy also copies the system's, GLib's, GnuTLS's,
 # systemd's and more, from the Ubuntu it is built on; on a newer one those older copies are loaded
 # before the system's and break what the system then loads beside them, the keychain's libsecret
