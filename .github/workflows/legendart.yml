@@ -148,6 +148,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
+          modules: qtmultimedia
           cache: true
 
       - name: Ninja
@@ -161,13 +162,13 @@ jobs:
         run: |
           Set-Location legendart
           cmake --preset windows-release *> ..\configure.log
-          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Context 1,3 -Pattern "CMake Error" | Select-Object -First 20; exit 1 }
           cmake --build --preset windows-release --target legendart *> ..\build.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
           cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
           Set-Location ..
-          foreach ($needed in "bin\legendart.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll") {
+          foreach ($needed in "bin\legendart.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\Qt6Multimedia.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll") {
             if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
           }
           Write-Output "Built and installed $env:PRODUCT $env:VERSION."
