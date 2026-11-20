@@ -1,0 +1,243 @@
+# The installer for a tag of the private wira-systems/legendart: run by hand, it is
+# built here, where Windows machines are free, and handed to the brand's own
+# release for the tag, never published here. legendart is read with a read-only deploy key,
+# the secret LEGENDART_DEPLOY_KEY, and only the finished files leave a build: no step
+# prints the source, and the logs, which are public, show only what went wrong.
+#
+# The file passes through a draft release here, which only the organization sees; once
+# built it is put on legendart's own release and the draft is deleted.
+
+name: Legendart
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "A tag of wira-systems/legendart to build, as v0.1.0"
+        required: false
+      try:
+        description: "Or a branch of legendart, only to try its builds: nothing is uploaded nor published"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-legendart
+  cancel-in-progress: false
+
+env:
+  LEGENDART: git@github.com:wira-systems/legendart.git
+  APP: legendart
+  TARGET: wira-systems/legendart
+  QT_VERSION: "6.8.3"
+  PRODUCT: "Legendart"
+  SLUG: "Legendart"
+
+jobs:
+  find:
+    name: Find the tag to build
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      release: ${{ steps.pick.outputs.release }}
+      version: ${{ steps.pick.outputs.version }}
+      beta: ${{ steps.pick.outputs.beta }}
+      try: ${{ steps.pick.outputs.try }}
+    steps:
+      - name: Read legendart's tags
+        id: pick
+        env:
+          DEPLOY_KEY: ${{ secrets.LEGENDART_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          ASKED: ${{ inputs.tag }}
+          TRY: ${{ inputs.try }}
+        run: |
+          set -euo pipefail
+          if [ -n "$TRY" ]; then
+            echo "Trying the build of legendart's $TRY, uploading nothing."
+            { echo "tag=$TRY"; echo "version=0.0.0-try.1"; echo "beta=true"; echo "try=true"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "try=false" >> "$GITHUB_OUTPUT"
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/legendart
+          chmod 600 ~/.ssh/legendart
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/legendart -o IdentitiesOnly=yes"
+          tags=$(git ls-remote --tags --refs "$LEGENDART" 'v*' | sed 's#.*refs/tags/##' | sort -V)
+          if [ -z "$ASKED" ]; then
+            echo "::error::Name a tag of wira-systems/legendart to build, as v0.1.0"
+            exit 1
+          fi
+          if ! grep -qx -- "$ASKED" <<<"$tags"; then
+            echo "::error::$ASKED is not a tag of wira-systems/legendart"
+            exit 1
+          fi
+          pick="$ASKED"
+          echo "Building $pick."
+          echo "tag=$pick" >> "$GITHUB_OUTPUT"
+          echo "release=${pick:+$APP-$pick-in-transit}" >> "$GITHUB_OUTPUT"
+          echo "version=${pick#v}" >> "$GITHUB_OUTPUT"
+          [[ "$pick" == *-* ]] && echo "beta=true" >> "$GITHUB_OUTPUT" || echo "beta=false" >> "$GITHUB_OUTPUT"
+
+  draft:
+    name: Its draft here, which only the organization sees
+    needs: find
+    if: needs.find.outputs.tag != '' && needs.find.outputs.try != 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Its draft, with what each file is and how to install it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.find.outputs.tag }}
+          RELEASE: ${{ needs.find.outputs.release }}
+          VERSION: ${{ needs.find.outputs.version }}
+          BETA: ${{ needs.find.outputs.beta }}
+          PRODUCT: ${{ env.PRODUCT }}
+          SLUG: ${{ env.SLUG }}
+        run: |
+          set -euo pipefail
+          {
+            if [ "$BETA" = "true" ]; then
+              echo "A beta of $PRODUCT $VERSION, for trying out before its release."
+            else
+              echo "$PRODUCT $VERSION."
+            fi
+            echo
+            echo "| File | For | To install |"
+            echo "| --- | --- | --- |"
+            echo "| \`${SLUG}-${VERSION}-setup.exe\` | Windows 10 and 11 | Open it; if Windows says the publisher is unknown, choose **More info**, then **Run anyway**. |"
+          } > notes.md
+          gh release delete "$RELEASE" -R "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          flags=(--draft --target main --title "$PRODUCT $VERSION, in transit" --notes-file notes.md)
+          [ "$BETA" = "true" ] && flags+=(--prerelease)
+          gh release create "$RELEASE" -R "$GITHUB_REPOSITORY" "${flags[@]}"
+
+  exe:
+    name: The .exe, for Windows
+    needs: [find, draft]
+    if: >-
+      always() && needs.find.outputs.tag != '' &&
+      (needs.draft.result == 'success' || needs.find.outputs.try == 'true')
+    runs-on: windows-2022
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      PRODUCT: ${{ env.PRODUCT }}
+      SLUG: ${{ env.SLUG }}
+    steps:
+      - name: legendart, at the tag
+        shell: bash
+        env:
+          DEPLOY_KEY: ${{ secrets.LEGENDART_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/legendart-key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          ssh-keyscan -t ed25519 github.com > "$RUNNER_TEMP/known_hosts" 2>/dev/null
+          GIT_SSH_COMMAND="ssh -i '$key' -o IdentitiesOnly=yes -o UserKnownHostsFile='$RUNNER_TEMP/known_hosts'" \
+            git -c advice.detachedHead=false clone -q --depth 1 --branch "$TAG" "$LEGENDART" legendart
+          rm "$key"
+
+      - name: Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build the program alone, and install it with its Qt
+        shell: pwsh
+        run: |
+          Set-Location legendart
+          cmake --preset windows-release *> ..\configure.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\configure.log -Pattern "CMake Error|error" | Select-Object -First 20; exit 1 }
+          cmake --build --preset windows-release --target legendart *> ..\build.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\build.log -Pattern ": (fatal )?error" | Select-Object -First 30; exit 1 }
+          cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
+          if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
+          Set-Location ..
+          foreach ($needed in "bin\legendart.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll") {
+            if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
+          }
+          Write-Output "Built and installed $env:PRODUCT $env:VERSION."
+
+      - name: The .exe
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc /Q "/DVersion=$env:VERSION" "/DStaging=$PWD\stage" "/DOutDir=$PWD\dist" "legendart\packaging\legendart.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - name: Kept a day, on a try
+        if: needs.find.outputs.try == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: dist/*.exe
+          retention-days: 1
+
+      - name: Attached to the draft
+        if: needs.find.outputs.try != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$RELEASE" dist/*.exe -R "$GITHUB_REPOSITORY" --clobber
+
+  handover:
+    name: Handed to legendart's release
+    needs: [find, exe]
+    if: needs.find.outputs.tag != '' && needs.find.outputs.try != 'true'
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ needs.find.outputs.tag }}
+      RELEASE: ${{ needs.find.outputs.release }}
+      VERSION: ${{ needs.find.outputs.version }}
+      BETA: ${{ needs.find.outputs.beta }}
+      PRODUCT: ${{ env.PRODUCT }}
+    steps:
+      - name: The file, and its notes, from the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE" -R "$GITHUB_REPOSITORY" -D files
+          gh release view "$RELEASE" -R "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          ls -la files
+
+      - name: On legendart's release for the tag
+        env:
+          GH_TOKEN: ${{ secrets.LEGENDART_TOKEN }}
+        run: |
+          set -euo pipefail
+          export GH_TOKEN
+          if gh release view "$TAG" -R "$TARGET" > /dev/null 2>&1; then
+            gh release upload "$TAG" files/* -R "$TARGET" --clobber
+          else
+            flags=(--verify-tag --title "$PRODUCT $VERSION" --notes-file notes.md)
+            [ "$BETA" = "true" ] && flags+=(--prerelease)
+            gh release create "$TAG" files/* -R "$TARGET" "${flags[@]}"
+          fi
+          echo "On $TARGET's release $TAG."
+
+  cleanup:
+    name: The draft deleted
+    needs: [find, handover]
+    if: always() && needs.find.outputs.release != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Nothing of legendart's left here
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete "${{ needs.find.outputs.release }}" -R "$GITHUB_REPOSITORY" --yes || true

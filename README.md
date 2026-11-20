@@ -11,6 +11,7 @@ Shops get Wira POS from the app stores (Microsoft Store, Mac App Store, Snap Sto
 | **Wira POS**, the point of sale shops use | `wira-systems/pos` | `.github/workflows/pos.yml` (Wira POS) | `v1.2.0`, `v1.2.0-beta.1` |
 | **Wira POS on the web**, the node behind the till | `wira-systems/wira-pos` | `.github/workflows/wira-portal.yml` (Wira POS on the web) | `v0.3.0`, `v0.3.0-beta.1` |
 | **Activator**, Wira Systems' own tool that issues activation keys; never for shops | `wira-systems/activator` | `.github/workflows/activator.yml` (Activator) | `v0.1.0` |
+| **Legendart**, craft & design studio desktop application | `wira-systems/legendart` | `.github/workflows/legendart.yml` (Legendart) | `v0.1.0` |
 
 ## How a build works
 
@@ -66,9 +67,12 @@ Set up once, and kept. If a build fails at **Handover**, check the token first: 
 | Secret `POS_DEPLOY_KEY` | this repository → Settings → Secrets and variables → Actions | the agent | The private half of that key. |
 | Deploy key "wira-systems/releases (read-only, builds the Activator)" | `wira-systems/activator` → Settings → Deploy keys, read-only | the agent | Lets the Activator workflow read its source. |
 | Secret `ACTIVATOR_DEPLOY_KEY` | this repository's secrets | the agent | The private half of that key. |
+| Deploy key "wira-systems/releases (read-only, builds Legendart)" | `wira-systems/legendart` → Settings → Deploy keys, read-only | the agent | Lets the Legendart workflow read its source. |
+| Secret `LEGENDART_DEPLOY_KEY` | this repository's secrets | the agent | The private half of that key. |
 | Secret `POS_TOKEN` | this repository's secrets | **you** | A fine-grained token: owner `wira-systems`, only `wira-systems/pos`, permission **Contents: Read and write** (Metadata, read-only, comes with it). Lets the handover put files on pos's release. |
 | Secret `PORTAL_TOKEN` | this repository's secrets | **you** | The same, for `wira-systems/wira-pos` alone. |
 | Secret `ACTIVATOR_TOKEN` | this repository's secrets | **you** | The same, for `wira-systems/activator` alone. |
+| Secret `LEGENDART_TOKEN` | this repository's secrets | **you** | The same, for `wira-systems/legendart` alone. |
 
 A token is made on GitHub: your picture → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens** → **Generate new token**, with the owner, repository and permission above. Save it without it passing through anyone else, by running this and pasting it when asked:
 
