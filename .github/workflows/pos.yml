@@ -191,8 +191,8 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: linux_gcc_64
-          # Qt Serial Port, for a receipt printer connected directly (A-003).
-          modules: qtserialport
+          # Qt Serial Port for receipt printers, and Qt Image Formats for WebP images.
+          modules: qtserialport qtimageformats
           cache: true
 
       - name: The libraries Qt and the keychain need
@@ -201,7 +201,7 @@ jobs:
           sudo apt-get install -y -qq ninja-build ccache file libgl1-mesa-dev libegl1 libxkbcommon-dev
           libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0
           libxcb-shape0 libxcb-xinerama0 libxcb-randr0 libxcb-xkb1 libfontconfig1-dev libsecret-1-dev
-          libwayland-dev > /dev/null
+          libwayland-dev libwebp-dev > /dev/null
 
       - name: Build the program alone
         # Into a log that stays on the runner: only what went wrong is shown, never the source.
@@ -247,6 +247,8 @@ jobs:
           . /etc/os-release
           test -e /opt/$PACKAGE/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so \
             || { echo "::error::no Wayland graphics plugin on $PRETTY_NAME"; exit 1; }
+          test -e /opt/$PACKAGE/plugins/imageformats/libqwebp.so \
+            || { echo "::error::no WebP image format plugin on $PRETTY_NAME"; exit 1; }
           env LD_LIBRARY_PATH=/opt/$PACKAGE/lib python3 -c "import ctypes; ctypes.CDLL('libsecret-1.so.0')" \
             || { echo "::error::the keychain's library does not load beside the .deb's on $PRETTY_NAME"; exit 1; }
           xvfb-run -a wira --demo > /tmp/wira.log 2>&1 &
@@ -319,8 +321,8 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
-          # Qt Serial Port, for a receipt printer connected directly (A-003).
-          modules: qtserialport
+          # Qt Serial Port for receipt printers, and Qt Image Formats for WebP images.
+          modules: qtserialport qtimageformats
           cache: true
 
       - name: Ninja
@@ -342,8 +344,14 @@ jobs:
           cmake --install build\windows-release --prefix "$PWD\..\stage" *> ..\install.log
           if ($LASTEXITCODE -ne 0) { Select-String -Path ..\install.log -Pattern "error|Error" | Select-Object -First 20; exit 1 }
           Set-Location ..
+          if (Test-Path "$env:QT_ROOT_DIR\plugins\imageformats\qwebp.dll") {
+            if (-not (Test-Path "stage\plugins\imageformats\qwebp.dll")) {
+              New-Item -ItemType Directory -Force -Path "stage\plugins\imageformats" | Out-Null
+              Copy-Item "$env:QT_ROOT_DIR\plugins\imageformats\qwebp.dll" "stage\plugins\imageformats\"
+            }
+          }
           # Nothing ships without Qt beside it, and nothing of the Activator's ships at all.
-          foreach ($needed in "bin\wira.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll") {
+          foreach ($needed in "bin\wira.exe", "bin\Qt6Core.dll", "bin\Qt6Quick.dll", "bin\qt.conf", "plugins\platforms\qwindows.dll", "plugins\sqldrivers\qsqlite.dll", "plugins\imageformats\qwebp.dll") {
             if (-not (Test-Path "stage\$needed")) { Write-Error "The install has no $needed"; exit 1 }
           }
           $activator = Get-ChildItem stage -Recurse | Where-Object { $_.Name -match "activator" }
@@ -471,8 +479,8 @@ jobs:
           host: mac
           target: desktop
           arch: clang_64
-          # Qt Serial Port, for a receipt printer connected directly (A-003).
-          modules: qtserialport
+          # Qt Serial Port for receipt printers, and Qt Image Formats for WebP images.
+          modules: qtserialport qtimageformats
           cache: true
 
       - name: Build the app alone, for Apple Silicon and Intel
@@ -497,11 +505,16 @@ jobs:
           set -euo pipefail
           macdeployqt "build/$APP" -qmldir=pos/qml -always-overwrite > deploy.log 2>&1 \
             || { grep -iE "error|warning" deploy.log | head -30; exit 1; }
+          if [ -f "$QT_ROOT_DIR/plugins/imageformats/libqwebp.dylib" ]; then
+            mkdir -p "build/$APP/Contents/PlugIns/imageformats"
+            cp -f "$QT_ROOT_DIR/plugins/imageformats/libqwebp.dylib" "build/$APP/Contents/PlugIns/imageformats/"
+          fi
           codesign --force --deep --sign - "build/$APP"
           codesign --verify --deep --strict "build/$APP"
           # Nothing ships without Qt inside it, and nothing of the Activator's ships at all.
           for needed in Contents/Frameworks/QtCore.framework Contents/Frameworks/QtQuick.framework \
                         Contents/PlugIns/platforms/libqcocoa.dylib Contents/PlugIns/sqldrivers/libqsqlite.dylib \
+                        Contents/PlugIns/imageformats/libqwebp.dylib \
                         Contents/Resources/qt.conf "Contents/Resources/$ICON.icns"; do
             [ -e "build/$APP/$needed" ] || { echo "::error::the app has no $needed"; exit 1; }
           done
